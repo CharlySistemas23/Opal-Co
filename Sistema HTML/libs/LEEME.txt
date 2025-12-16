@@ -1,1 +1,0 @@
-Descarga las librerias segun INSTRUCCIONES_LIBS.md
