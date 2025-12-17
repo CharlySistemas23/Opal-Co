@@ -114,6 +114,9 @@
                             <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
                                 Usuarios demo: <strong>admin</strong> o <strong>vendedor1</strong> | PIN: <strong>1234</strong>
                             </small>
+                            <button type="button" id="create-demo-users-btn" style="margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                                <i class="fas fa-user-plus"></i> Crear Usuarios Demo
+                            </button>
                         </div>
                         <div class="form-group" id="pin-group">
                             <label>PIN</label>
@@ -121,7 +124,7 @@
                         </div>
                         <div id="login-error" class="error-message" style="display: none;"></div>
                         <button class="btn-primary" id="login-btn" style="width: 100%; margin-top: 10px;">Iniciar Sesión</button>
-                        <button class="btn-secondary" id="login-bypass-btn" style="width: 100%; margin-top: 8px; font-size: 11px; padding: 8px;" onclick="if(window.bypassLogin){window.bypassLogin();}else{alert('Sistema cargando... Espera 2 segundos y vuelve a intentar.');}">🔓 Acceso Directo (Solo pruebas)</button>
+                        <button class="btn-secondary" id="login-bypass-btn" style="width: 100%; margin-top: 8px; font-size: 11px; padding: 8px; background: #28a745; color: white; border: none; cursor: pointer;" onclick="setTimeout(() => { if(window.bypassLogin){window.bypassLogin();}else{alert('Espera 3 segundos y vuelve a intentar. El sistema se está cargando...');} }, 500);">🔓 Acceso Directo (Click aquí si no puedes entrar)</button>
                         <div style="margin-top: 15px; padding: 10px; background: #f0f0f0; border-radius: 4px; font-size: 12px;">
                             <strong>Acceso rápido:</strong><br>
                             Usuario: <strong>admin</strong><br>
@@ -416,6 +419,17 @@
     </div>
 
     <!-- Scripts -->
+    <!-- Debug logging initialization -->
+    <script>
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:422',message:'Página cargando scripts',data:{userAgent:navigator.userAgent.substring(0,50),url:window.location.href},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        window.addEventListener('error', function(e) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:425',message:'Error JavaScript capturado',data:{message:e.message,filename:e.filename,lineno:e.lineno,error:e.error?.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+        });
+    </script>
     <!-- Librerías externas - Deben cargarse primero -->
     <script src="libs/jspdf.umd.min.js"></script>
     <script src="libs/xlsx.full.min.js"></script>
@@ -466,7 +480,22 @@
     <script src="js/settings.js"></script>
     <script src="js/sync_ui.js"></script>
     <script src="js/printer.js"></script>
+    <script src="js/arrival_rules.js"></script>
+    <script src="js/profit.js"></script>
     <script src="js/app.js"></script>
+    <script>
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:474',message:'Todos los scripts cargados',data:{DBReady:typeof DB!=='undefined'&&!!DB.db,AppReady:typeof App!=='undefined',UserManagerReady:typeof UserManager!=='undefined',createDemoUsersReady:typeof window.createDemoUsers==='function',bypassLoginReady:typeof window.bypassLogin==='function'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        // Initialize app after all scripts loaded
+        if (typeof App !== 'undefined' && App.init) {
+            App.init().catch(err => {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:479',message:'App.init ERROR',data:{error:err.message,stack:err.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                // #endregion
+                console.error('Error inicializando app:', err);
+            });
+        }
+    </script>
 </body>
 </html>
-
