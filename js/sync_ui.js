@@ -4,6 +4,16 @@ const SyncUI = {
     initialized: false,
     
     async init() {
+        // Recargar configuración de sincronización desde la base de datos
+        try {
+            const urlSetting = await DB.get('settings', 'sync_url');
+            const tokenSetting = await DB.get('settings', 'sync_token');
+            if (urlSetting) SyncManager.syncUrl = urlSetting.value;
+            if (tokenSetting) SyncManager.syncToken = tokenSetting.value;
+        } catch (e) {
+            console.error('Error loading sync settings on init:', e);
+        }
+
         if (this.initialized) {
             // Si ya está inicializado, recargar la pestaña activa
             const activeTab = document.querySelector('#sync-tabs .tab-btn.active')?.dataset.tab || 'overview';
@@ -107,6 +117,16 @@ const SyncUI = {
     },
 
     async getOverviewTab() {
+        // Recargar configuración de sincronización desde la base de datos
+        try {
+            const urlSetting = await DB.get('settings', 'sync_url');
+            const tokenSetting = await DB.get('settings', 'sync_token');
+            if (urlSetting) SyncManager.syncUrl = urlSetting.value;
+            if (tokenSetting) SyncManager.syncToken = tokenSetting.value;
+        } catch (e) {
+            console.error('Error loading sync settings:', e);
+        }
+
         let status, syncStats, lastSync;
         try {
             status = await SyncManager.getSyncStatus();
@@ -118,15 +138,27 @@ const SyncUI = {
             syncStats = { totalProcessed: 0, successRate: 0, avgPerSync: 0, avgDuration: 0 };
             lastSync = null;
         }
+
+        // Verificar si está configurado
+        const isConfigured = SyncManager.syncUrl && SyncManager.syncToken;
         
         return `
+            ${!isConfigured ? `
+                <div style="padding: var(--spacing-md); background: var(--color-warning); color: white; border-radius: var(--radius-md); margin-bottom: var(--spacing-md);">
+                    <strong><i class="fas fa-exclamation-triangle"></i> Configuración Requerida</strong>
+                    <p style="margin: var(--spacing-xs) 0 0 0; font-size: 12px;">
+                        La URL y Token de sincronización no están configurados. 
+                        Ve a <strong>Configuración → Sincronización</strong> para configurarlos.
+                    </p>
+                </div>
+            ` : ''}
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--spacing-md); margin-bottom: var(--spacing-lg); width: 100%; max-width: 100%; box-sizing: border-box;">
                 <div class="kpi-card">
                     <div class="kpi-label">Pendientes</div>
                     <div class="kpi-value" style="color: ${status.pending > 0 ? 'var(--color-warning)' : 'var(--color-success)'};">
                         ${status.pending}
                     </div>
-                    ${status.pending > 0 ? `
+                    ${status.pending > 0 && isConfigured ? `
                         <div style="font-size: 10px; color: var(--color-text-secondary); margin-top: var(--spacing-xs);">
                             <button class="btn-secondary btn-sm" onclick="window.SyncManager.syncNow()" style="width: 100%;">
                                 Sincronizar Ahora
@@ -238,11 +270,16 @@ const SyncUI = {
                 </div>
             </div>
 
-            <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light); margin-top: var(--spacing-md); width: 100%; max-width: 100%; box-sizing: border-box;">
-                <h3 style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--spacing-sm);">
-                    <i class="fas fa-chart-line"></i> Actividad Reciente
-                </h3>
-                <div id="sync-activity-chart" style="height: 200px; background: var(--color-bg-secondary); border-radius: var(--radius-sm); padding: var(--spacing-sm);">
+            <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light); margin-top: var(--spacing-md); width: 100%; max-width: 100%; box-sizing: border-box; overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-sm);">
+                    <h3 style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 0;">
+                        <i class="fas fa-chart-line"></i> Actividad Reciente
+                    </h3>
+                    <button class="btn-secondary btn-sm" onclick="window.SyncManager.clearSyncedItems(); window.SyncUI.loadTab('overview');" title="Limpiar sincronizados">
+                        <i class="fas fa-trash"></i> Limpiar Sincronizados
+                    </button>
+                </div>
+                <div id="sync-activity-chart" style="height: 200px; max-height: 200px; overflow-y: auto; overflow-x: hidden; background: var(--color-bg-secondary); border-radius: var(--radius-sm); padding: var(--spacing-sm); width: 100%; box-sizing: border-box;">
                     ${await this.renderActivityChart()}
                 </div>
             </div>
@@ -605,14 +642,14 @@ const SyncUI = {
         const recentLogs = logs.slice(-20).reverse();
         
         if (recentLogs.length === 0) {
-            return '<p style="text-align: center; color: var(--color-text-secondary); padding: var(--spacing-md);">No hay actividad reciente</p>';
+            return '<p style="text-align: center; color: var(--color-text-secondary); padding: var(--spacing-md); margin: 0;">No hay actividad reciente</p>';
         }
 
         return recentLogs.map(log => `
-            <div style="padding: var(--spacing-xs); border-bottom: 1px solid var(--color-border-light); font-size: 10px;">
-                <div style="display: flex; justify-content: space-between;">
-                    <span>${log.message || 'Sin mensaje'}</span>
-                    <span style="color: var(--color-text-secondary);">${Utils.formatDate(log.created_at, 'HH:mm:ss')}</span>
+            <div style="padding: var(--spacing-xs); border-bottom: 1px solid var(--color-border-light); font-size: 10px; width: 100%; box-sizing: border-box; word-wrap: break-word;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--spacing-xs);">
+                    <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;">${log.message || 'Sin mensaje'}</span>
+                    <span style="color: var(--color-text-secondary); white-space: nowrap; flex-shrink: 0;">${Utils.formatDate(log.created_at, 'HH:mm:ss')}</span>
                 </div>
             </div>
         `).join('');
