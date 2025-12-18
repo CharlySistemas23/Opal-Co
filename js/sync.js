@@ -186,9 +186,20 @@ const SyncManager = {
 
             for (const [entityType, items] of Object.entries(grouped)) {
                 try {
-                    const records = await this.prepareRecords(entityType, items.map(i => i.entity_id));
+                    // Separar items por acción (upsert vs delete)
+                    const upsertItems = items.filter(i => !i.action || i.action === 'upsert');
+                    const deleteItems = items.filter(i => i.action === 'delete');
                     
-                    const result = await this.sendToSheets(entityType, records);
+                    // Preparar records para upsert
+                    const records = await this.prepareRecords(entityType, upsertItems.map(i => i.entity_id), 'upsert');
+                    
+                    // Preparar records para delete (obtener metadata de items eliminados)
+                    const deleteRecords = await this.prepareRecords(entityType, deleteItems.map(i => i.entity_id), 'delete');
+                    
+                    // Combinar records
+                    const allRecords = [...records, ...deleteRecords];
+                    
+                    const result = await this.sendToSheets(entityType, allRecords, items);
                     
                     if (result.success) {
                         // Mark as synced
@@ -198,9 +209,22 @@ const SyncManager = {
                                 status: 'synced',
                                 last_attempt: new Date().toISOString()
                             });
+                            
+                            // Si fue una eliminación, limpiar el store de eliminados después de sincronizar
+                            if (item.action === 'delete') {
+                                try {
+                                    await DB.delete('sync_deleted_items', item.entity_id);
+                                } catch (e) {
+                                    console.warn('Error limpiando sync_deleted_items:', e);
+                                }
+                            }
                         }
                         successCount += items.length;
-                        await this.addLog('success', `Sincronizado: ${items.length} ${entityType}`, 'synced', Date.now() - startTime);
+                        const deleteCount = deleteItems.length;
+                        const logMessage = deleteCount > 0 
+                            ? `Sincronizado: ${upsertItems.length} ${entityType}, ${deleteCount} eliminado(s)`
+                            : `Sincronizado: ${items.length} ${entityType}`;
+                        await this.addLog('success', logMessage, 'synced', Date.now() - startTime);
                     } else {
                         throw new Error(result.error || 'Error desconocido');
                     }
@@ -249,26 +273,45 @@ const SyncManager = {
         }
     },
 
-    async prepareRecords(entityType, entityIds) {
+    async prepareRecords(entityType, entityIds, action = 'upsert') {
         const records = [];
         
         for (const id of entityIds) {
             try {
                 let record = null;
                 
-                switch (entityType) {
-                    case 'sale':
-                        record = await DB.get('sales', id);
-                        if (record) {
-                            const items = await DB.query('sale_items', 'sale_id', id);
-                            const payments = await DB.query('payments', 'sale_id', id);
-                            record.items = items;
-                            record.payments = payments;
-                        }
-                        break;
-                    case 'inventory_item':
-                        record = await DB.get('inventory_items', id);
-                        break;
+                // Si es una eliminación, obtener metadata del store de eliminados
+                if (action === 'delete') {
+                    const deletedMetadata = await DB.get('sync_deleted_items', id);
+                    if (deletedMetadata && deletedMetadata.metadata) {
+                        record = {
+                            ...deletedMetadata.metadata,
+                            _action: 'delete', // Marcar como eliminación
+                            _deleted_at: deletedMetadata.deleted_at
+                        };
+                    } else {
+                        // Si no hay metadata, crear un record básico con el ID
+                        record = {
+                            id: id,
+                            _action: 'delete',
+                            _deleted_at: new Date().toISOString()
+                        };
+                    }
+                } else {
+                    // Acción normal (upsert)
+                    switch (entityType) {
+                        case 'sale':
+                            record = await DB.get('sales', id);
+                            if (record) {
+                                const items = await DB.query('sale_items', 'sale_id', id);
+                                const payments = await DB.query('payments', 'sale_id', id);
+                                record.items = items;
+                                record.payments = payments;
+                            }
+                            break;
+                        case 'inventory_item':
+                            record = await DB.get('inventory_items', id);
+                            break;
                     case 'employee':
                         record = await DB.get('employees', id);
                         break;
@@ -338,13 +381,17 @@ const SyncManager = {
         return records;
     },
 
-    async sendToSheets(entityType, records) {
+    async sendToSheets(entityType, records, queueItems = null) {
         if (!this.syncUrl || !this.syncToken) {
             throw new Error('Sync URL o token no configurado');
         }
 
         const settings = await this.getSyncSettings();
         const timeout = (settings.timeout || 30) * 1000;
+        
+        // Separar records de eliminaciones y upserts
+        const deleteRecords = records.filter(r => r._action === 'delete');
+        const upsertRecords = records.filter(r => !r._action || r._action !== 'delete');
 
         try {
             const controller = new AbortController();
@@ -353,7 +400,13 @@ const SyncManager = {
             const payload = {
                 token: this.syncToken,
                 entity_type: entityType,
-                records: records,
+                records: upsertRecords, // Solo enviar upserts en records normales
+                deletes: deleteRecords.map(r => ({ // Enviar eliminaciones separadas
+                    id: r.id,
+                    sku: r.sku || null,
+                    branch_id: r.branch_id || null,
+                    deleted_at: r._deleted_at || new Date().toISOString()
+                })),
                 device_id: await this.getDeviceId(),
                 timestamp: new Date().toISOString()
             };
