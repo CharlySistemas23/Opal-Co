@@ -267,12 +267,36 @@ const Inventory = {
             fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'inventory.js:247',message:'loadInventory started',data:{currentBranchId:currentBranchId,hasBranchManager:typeof BranchManager!=='undefined'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
             // #endregion
             
-            // Obtener items filtrados por sucursal (con fallback a items sin branch_id)
+            // Obtener items filtrados por sucursal
+            const currentBranchId = typeof BranchManager !== 'undefined' 
+                ? BranchManager.getCurrentBranchId() 
+                : localStorage.getItem('current_branch_id');
+            
+            const isAdmin = typeof UserManager !== 'undefined' && (
+                UserManager.currentUser?.role === 'admin' || 
+                UserManager.currentUser?.permissions?.includes('all')
+            );
+            
+            // Si es admin y no hay filtro de sucursal específico, puede ver todos los items
+            const branchFilterValue = document.getElementById('inventory-branch-filter')?.value;
+            const viewAllBranches = isAdmin && !branchFilterValue;
+            
             let items = await DB.getAll('inventory_items', null, null, { 
-                filterByBranch: true, 
+                filterByBranch: !viewAllBranches, 
                 branchIdField: 'branch_id',
-                includeNull: true  // Incluir items sin branch_id como fallback
+                includeNull: false  // NO incluir items sin branch_id (deben tener sucursal asignada)
             }) || [];
+            
+            // Filtrado adicional manual para asegurar que solo se muestren items de la sucursal actual
+            if (!viewAllBranches && currentBranchId) {
+                const normalizedCurrentBranchId = String(currentBranchId);
+                items = items.filter(item => {
+                    // Normalizar branch_id para comparación flexible
+                    const itemBranchId = item.branch_id != null ? String(item.branch_id) : null;
+                    // Solo incluir items que pertenecen a la sucursal actual
+                    return itemBranchId === normalizedCurrentBranchId;
+                });
+            }
             
             // #region agent log
             fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'inventory.js:255',message:'Items retrieved from DB',data:{itemsCount:items.length,currentBranchId:currentBranchId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
@@ -605,6 +629,29 @@ const Inventory = {
             const priceHistory = await DB.query('inventory_price_history', 'item_id', itemId);
             for (const ph of priceHistory) {
                 await DB.delete('inventory_price_history', ph.id);
+            }
+            
+            // Guardar metadata del item antes de eliminarlo para sincronización
+            const itemMetadata = {
+                id: item.id,
+                sku: item.sku,
+                name: item.name,
+                branch_id: item.branch_id,
+                deleted_at: new Date().toISOString()
+            };
+            
+            // Agregar a cola de sincronización ANTES de eliminar (para que Google Sheets sepa que fue eliminado)
+            if (typeof SyncManager !== 'undefined') {
+                // Guardar metadata en un store temporal para que prepareRecords pueda accederlo
+                await DB.add('sync_deleted_items', {
+                    id: itemId,
+                    entity_type: 'inventory_item',
+                    metadata: itemMetadata,
+                    deleted_at: new Date().toISOString()
+                });
+                
+                // Agregar a cola con action='delete'
+                await SyncManager.addToQueue('inventory_item', itemId, 'delete');
             }
             
             // Registrar la eliminación en el log
