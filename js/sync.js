@@ -282,15 +282,24 @@ const SyncManager = {
                 
                 // Si es una eliminación, obtener metadata del store de eliminados
                 if (action === 'delete') {
-                    const deletedMetadata = await DB.get('sync_deleted_items', id);
-                    if (deletedMetadata && deletedMetadata.metadata) {
-                        record = {
-                            ...deletedMetadata.metadata,
-                            _action: 'delete', // Marcar como eliminación
-                            _deleted_at: deletedMetadata.deleted_at
-                        };
-                    } else {
-                        // Si no hay metadata, crear un record básico con el ID
+                    try {
+                        const deletedMetadata = await DB.get('sync_deleted_items', id);
+                        if (deletedMetadata && deletedMetadata.metadata) {
+                            record = {
+                                ...deletedMetadata.metadata,
+                                _action: 'delete', // Marcar como eliminación
+                                _deleted_at: deletedMetadata.deleted_at
+                            };
+                        } else {
+                            // Si no hay metadata, crear un record básico con el ID
+                            record = {
+                                id: id,
+                                _action: 'delete',
+                                _deleted_at: new Date().toISOString()
+                            };
+                        }
+                    } catch (deleteError) {
+                        // Si falla, crear un record básico
                         record = {
                             id: id,
                             _action: 'delete',
@@ -312,63 +321,63 @@ const SyncManager = {
                         case 'inventory_item':
                             record = await DB.get('inventory_items', id);
                             break;
-                    case 'employee':
-                        record = await DB.get('employees', id);
-                        break;
-                    case 'repair':
-                        record = await DB.get('repairs', id);
-                        break;
-                    case 'cost_entry':
-                        record = await DB.get('cost_entries', id);
-                        break;
-                    case 'tourist_report':
-                        record = await DB.get('tourist_reports', id);
-                        if (record) {
-                            const lines = await DB.query('tourist_report_lines', 'report_id', id);
-                            record.lines = lines;
-                        }
-                        break;
-                    case 'catalog_seller':
-                        record = await DB.get('catalog_sellers', id);
-                        break;
-                    case 'catalog_guide':
-                        record = await DB.get('catalog_guides', id);
-                        break;
-                    case 'catalog_agency':
-                        record = await DB.get('catalog_agencies', id);
-                        break;
-                    case 'customer':
-                        record = await DB.get('customers', id);
-                        break;
-                    case 'user':
-                        record = await DB.get('users', id);
-                        break;
-                    case 'arrival_rate_rule':
-                        record = await DB.get('arrival_rate_rules', id);
-                        break;
-                    case 'agency_arrival':
-                        record = await DB.get('agency_arrivals', id);
-                        break;
-                    case 'daily_profit_report':
-                        record = await DB.get('daily_profit_reports', id);
-                        break;
-                    case 'inventory_transfer':
-                        record = await DB.get('inventory_transfers', id);
-                        if (record) {
-                            const transferItems = await DB.query('inventory_transfer_items', 'transfer_id', id);
-                            record.items = transferItems;
-                        }
-                        break;
-                    case 'catalog_branch':
-                        record = await DB.get('catalog_branches', id);
-                        break;
-                    case 'exchange_rate_daily':
-                        record = await DB.get('exchange_rates_daily', id);
-                        break;
-                    default:
-                        console.warn(`Tipo de entidad desconocido en prepareRecords: ${entityType}`);
-                        break;
-                }
+                        case 'employee':
+                            record = await DB.get('employees', id);
+                            break;
+                        case 'repair':
+                            record = await DB.get('repairs', id);
+                            break;
+                        case 'cost_entry':
+                            record = await DB.get('cost_entries', id);
+                            break;
+                        case 'tourist_report':
+                            record = await DB.get('tourist_reports', id);
+                            if (record) {
+                                const lines = await DB.query('tourist_report_lines', 'report_id', id);
+                                record.lines = lines;
+                            }
+                            break;
+                        case 'catalog_seller':
+                            record = await DB.get('catalog_sellers', id);
+                            break;
+                        case 'catalog_guide':
+                            record = await DB.get('catalog_guides', id);
+                            break;
+                        case 'catalog_agency':
+                            record = await DB.get('catalog_agencies', id);
+                            break;
+                        case 'customer':
+                            record = await DB.get('customers', id);
+                            break;
+                        case 'user':
+                            record = await DB.get('users', id);
+                            break;
+                        case 'arrival_rate_rule':
+                            record = await DB.get('arrival_rate_rules', id);
+                            break;
+                        case 'agency_arrival':
+                            record = await DB.get('agency_arrivals', id);
+                            break;
+                        case 'daily_profit_report':
+                            record = await DB.get('daily_profit_reports', id);
+                            break;
+                        case 'inventory_transfer':
+                            record = await DB.get('inventory_transfers', id);
+                            if (record) {
+                                const transferItems = await DB.query('inventory_transfer_items', 'transfer_id', id);
+                                record.items = transferItems;
+                            }
+                            break;
+                        case 'catalog_branch':
+                            record = await DB.get('catalog_branches', id);
+                            break;
+                        case 'exchange_rate_daily':
+                            record = await DB.get('exchange_rates_daily', id);
+                            break;
+                        default:
+                            console.warn(`Tipo de entidad desconocido en prepareRecords: ${entityType}`);
+                            break;
+                    }
                 
                 if (record) {
                     records.push(record);
