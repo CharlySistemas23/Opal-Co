@@ -7,6 +7,15 @@ const Settings = {
         if (this.initialized) return;
         this.setupUI();
         await this.loadSettings();
+        
+        // Escuchar eventos de sincronización para actualizar el estado
+        window.addEventListener('sync-completed', async () => {
+            // Si estamos en la pestaña de sincronización, recargar el estado
+            const activeTab = document.querySelector('#settings-tabs .tab-btn.active')?.dataset.tab;
+            if (activeTab === 'sync') {
+                await this.loadSyncStatus();
+            }
+        });
         this.initialized = true;
     },
 
@@ -4032,6 +4041,14 @@ const Settings = {
             Utils.showNotification('Conexión establecida con Google Sheets', 'success');
             console.log('Petición enviada correctamente (no-cors mode)');
             
+            // Guardar log de prueba exitosa
+            if (typeof SyncManager !== 'undefined') {
+                await SyncManager.addLog('info', 'Prueba de conexión exitosa', 'synced');
+            }
+            
+            // Recargar estado de sincronización
+            await this.loadSyncStatus();
+            
             // Mostrar mensaje informativo
             setTimeout(() => {
                 Utils.showNotification('Verifica en Google Sheets que los datos lleguen', 'info');
@@ -4077,7 +4094,9 @@ const Settings = {
     async forceSync() {
         if (typeof SyncManager !== 'undefined') {
             Utils.showNotification('Iniciando sincronización...', 'info');
-            await SyncManager.sync();
+            await SyncManager.syncNow();
+            // Recargar estado después de sincronizar
+            await this.loadSyncStatus();
         } else {
             Utils.showNotification('SyncManager no disponible', 'error');
         }
@@ -4151,23 +4170,79 @@ const Settings = {
         if (!statusContainer) return;
 
         try {
+            // Verificar si está configurado
+            const urlSetting = await DB.get('settings', 'sync_url');
+            const tokenSetting = await DB.get('settings', 'sync_token');
+            const isConfigured = urlSetting?.value && tokenSetting?.value;
+
+            if (!isConfigured) {
+                statusContainer.innerHTML = `
+                    <div style="margin-bottom: var(--spacing-xs);">
+                        <strong>Estado:</strong> 
+                        <span style="color: var(--color-warning);">No configurado</span>
+                    </div>
+                    <div style="font-size: 10px; color: var(--color-text-secondary);">
+                        Configura la URL y Token para sincronizar
+                    </div>
+                `;
+                return;
+            }
+
+            // Buscar el último log de sincronización real (no de prueba)
             const syncLogs = await DB.getAll('sync_logs') || [];
-            const lastSync = syncLogs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            // Filtrar logs de sincronización real (que tengan status 'synced' o 'failed')
+            const realSyncLogs = syncLogs.filter(log => 
+                log.status === 'synced' || log.status === 'failed'
+            );
+            const lastSync = realSyncLogs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+
+            // Si no hay sincronizaciones reales, verificar si hay items pendientes
+            if (!lastSync) {
+                const syncQueue = await DB.getAll('sync_queue') || [];
+                const pending = syncQueue.filter(item => item.status === 'pending');
+                
+                if (pending.length > 0) {
+                    statusContainer.innerHTML = `
+                        <div style="margin-bottom: var(--spacing-xs);">
+                            <strong>Estado:</strong> 
+                            <span style="color: var(--color-warning);">Pendiente</span>
+                        </div>
+                        <div style="font-size: 10px; color: var(--color-text-secondary);">
+                            ${pending.length} elemento(s) pendiente(s) de sincronizar
+                        </div>
+                    `;
+                } else {
+                    statusContainer.innerHTML = `
+                        <div style="margin-bottom: var(--spacing-xs);">
+                            <strong>Estado:</strong> 
+                            <span style="color: var(--color-success);">Listo</span>
+                        </div>
+                        <div style="font-size: 10px; color: var(--color-text-secondary);">
+                            Sin sincronizaciones previas
+                        </div>
+                    `;
+                }
+                return;
+            }
+
+            // Determinar estado basado en el último log
+            const isSuccess = lastSync.status === 'synced';
+            const statusText = isSuccess ? 'Sincronizado' : 'Error';
+            const statusColor = isSuccess ? 'var(--color-success)' : 'var(--color-danger)';
 
             statusContainer.innerHTML = `
                 <div style="margin-bottom: var(--spacing-xs);">
                     <strong>Estado:</strong> 
-                    <span style="color: ${lastSync?.status === 'success' ? 'var(--color-success)' : 'var(--color-danger)'};">
-                        ${lastSync ? (lastSync.status === 'success' ? 'Sincronizado' : 'Error') : 'Sin sincronizar'}
+                    <span style="color: ${statusColor};">
+                        ${statusText}
                     </span>
                 </div>
-                ${lastSync ? `
-                    <div style="font-size: 10px; color: var(--color-text-secondary);">
-                        Última sincronización: ${Utils.formatDate(lastSync.created_at, 'DD/MM/YYYY HH:mm')}
-                    </div>
-                ` : ''}
+                <div style="font-size: 10px; color: var(--color-text-secondary);">
+                    Última sincronización: ${Utils.formatDate(lastSync.created_at, 'DD/MM/YYYY HH:mm')}
+                </div>
             `;
         } catch (e) {
+            console.error('Error loading sync status:', e);
             statusContainer.innerHTML = '<div style="color: var(--color-danger);">Error al cargar estado</div>';
         }
     },
