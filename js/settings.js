@@ -68,6 +68,7 @@ const Settings = {
                 break;
             case 'security':
                 content.innerHTML = this.getSecurityTab();
+                await this.loadCompanyCodeSettings();
                 break;
             case 'system':
                 content.innerHTML = this.getSystemTab();
@@ -642,6 +643,33 @@ const Settings = {
                     </div>
                     <button class="btn-primary btn-sm" onclick="window.Settings.changeMasterPin()" style="width: 100%; margin-top: var(--spacing-xs);">
                         Cambiar PIN
+                    </button>
+                </div>
+
+                <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+                    <h3 style="margin-bottom: var(--spacing-md); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <i class="fas fa-building"></i> Código de Acceso de Empresa
+                    </h3>
+                    <p style="font-size: 11px; color: var(--color-text-secondary); margin-bottom: var(--spacing-sm);">
+                        Este código se solicita antes del login. Solo usuarios autorizados pueden acceder al sistema.
+                    </p>
+                    <div class="form-group">
+                        <label>Código Actual</label>
+                        <input type="text" id="setting-current-company-code" class="form-input" placeholder="Código actual" readonly style="background: var(--color-bg-secondary);">
+                    </div>
+                    <div class="form-group">
+                        <label>Nuevo Código</label>
+                        <input type="password" id="setting-new-company-code" class="form-input" placeholder="Nuevo código de acceso">
+                    </div>
+                    <div class="form-group">
+                        <label>Confirmar Nuevo Código</label>
+                        <input type="password" id="setting-confirm-company-code" class="form-input" placeholder="Confirma el nuevo código">
+                    </div>
+                    <button class="btn-primary btn-sm" onclick="window.Settings.changeCompanyCode()" style="width: 100%; margin-top: var(--spacing-xs);">
+                        <i class="fas fa-save"></i> Cambiar Código
+                    </button>
+                    <button class="btn-secondary btn-sm" onclick="window.Settings.clearCompanyCodeCache()" style="width: 100%; margin-top: var(--spacing-xs);">
+                        <i class="fas fa-trash"></i> Limpiar Códigos Guardados
                     </button>
                 </div>
             </div>
@@ -3512,6 +3540,65 @@ const Settings = {
         document.getElementById('setting-confirm-pin').value = '';
 
         Utils.showNotification('PIN cambiado correctamente', 'success');
+    },
+
+    async loadCompanyCodeSettings() {
+        // Cargar código actual (sin mostrarlo completo por seguridad)
+        const currentCodeInput = document.getElementById('setting-current-company-code');
+        if (currentCodeInput && typeof App !== 'undefined' && App.COMPANY_ACCESS_CODE) {
+            const code = App.COMPANY_ACCESS_CODE;
+            // Mostrar solo los primeros y últimos caracteres
+            const masked = code.length > 4 
+                ? code.substring(0, 2) + '•'.repeat(code.length - 4) + code.substring(code.length - 2)
+                : '•'.repeat(code.length);
+            currentCodeInput.value = masked;
+        }
+    },
+
+    async changeCompanyCode() {
+        const newCode = document.getElementById('setting-new-company-code').value.trim();
+        const confirmCode = document.getElementById('setting-confirm-company-code').value.trim();
+
+        if (!newCode || !confirmCode) {
+            Utils.showNotification('Completa todos los campos', 'error');
+            return;
+        }
+
+        if (newCode.length < 4) {
+            Utils.showNotification('El código debe tener al menos 4 caracteres', 'error');
+            return;
+        }
+
+        if (newCode !== confirmCode) {
+            Utils.showNotification('Los códigos no coinciden', 'error');
+            return;
+        }
+
+        // Cambiar el código en App
+        if (typeof App !== 'undefined') {
+            App.COMPANY_ACCESS_CODE = newCode;
+            
+            // Limpiar códigos guardados para forzar nueva validación
+            localStorage.removeItem('company_code_validated');
+            
+            // Limpiar campos
+            document.getElementById('setting-new-company-code').value = '';
+            document.getElementById('setting-confirm-company-code').value = '';
+            
+            // Actualizar display del código actual
+            await this.loadCompanyCodeSettings();
+            
+            Utils.showNotification('Código de acceso cambiado correctamente. Todos los usuarios deberán ingresar el nuevo código.', 'success');
+        } else {
+            Utils.showNotification('Error: No se pudo cambiar el código', 'error');
+        }
+    },
+
+    async clearCompanyCodeCache() {
+        if (await Utils.confirm('¿Estás seguro de que deseas limpiar todos los códigos guardados? Esto forzará a todos los usuarios a ingresar el código nuevamente.')) {
+            localStorage.removeItem('company_code_validated');
+            Utils.showNotification('Códigos guardados eliminados. Todos los usuarios deberán ingresar el código nuevamente.', 'success');
+        }
     },
 
     async managePermissions() {
