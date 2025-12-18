@@ -2326,11 +2326,72 @@ const Settings = {
                         placeholder="Ej: Av. Principal #123, Col. Centro, Ciudad"></textarea>
                     <small style="color: var(--color-text-secondary); font-size: 10px;">Dirección física de la sucursal</small>
                 </div>
-                <div class="form-group">
+                    <div class="form-group">
                     <label>Teléfono (opcional)</label>
                     <input type="text" id="branch-phone-input" class="form-input" 
                         placeholder="Ej: (999) 123-4567" maxlength="20">
                 </div>
+                
+                <!-- Datos Empresariales -->
+                <div style="margin-top: var(--spacing-md); padding-top: var(--spacing-md); border-top: 2px solid var(--color-border-light);">
+                    <h4 style="font-size: 12px; font-weight: 600; margin-bottom: var(--spacing-sm); color: var(--color-primary);">
+                        <i class="fas fa-building"></i> Datos Empresariales (Personalización)
+                    </h4>
+                    <small style="color: var(--color-text-secondary); font-size: 10px; display: block; margin-bottom: var(--spacing-sm);">
+                        Estos datos se usarán en tickets, reportes y documentos generados para esta sucursal
+                    </small>
+                    
+                    <div class="form-group">
+                        <label>Nombre Comercial / Razón Social</label>
+                        <input type="text" id="branch-business-name-input" class="form-input" 
+                            placeholder="Ej: Opal & Co Sucursal Centro" maxlength="200">
+                        <small style="color: var(--color-text-secondary); font-size: 9px;">Nombre que aparecerá en tickets y documentos</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Dirección Completa</label>
+                        <textarea id="branch-business-address-input" class="form-textarea" rows="3" 
+                            placeholder="Ej: Av. Principal #123, Col. Centro, CP 97000, Ciudad, Estado"></textarea>
+                        <small style="color: var(--color-text-secondary); font-size: 9px;">Dirección completa para documentos fiscales</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Teléfono de Contacto</label>
+                        <input type="text" id="branch-business-phone-input" class="form-input" 
+                            placeholder="Ej: +52 999 123 4567" maxlength="30">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Correo Electrónico</label>
+                        <input type="email" id="branch-business-email-input" class="form-input" 
+                            placeholder="Ej: ventas@sucursal-centro.opal.com" maxlength="100">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>RFC (Registro Federal de Contribuyentes)</label>
+                        <input type="text" id="branch-business-rfc-input" class="form-input" 
+                            placeholder="Ej: ABC123456789" maxlength="20">
+                        <small style="color: var(--color-text-secondary); font-size: 9px;">Para facturación y documentos fiscales</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Pie de Página Personalizado</label>
+                        <textarea id="branch-business-footer-input" class="form-textarea" rows="2" 
+                            placeholder="Ej: ¡Gracias por su compra! Visítenos pronto."></textarea>
+                        <small style="color: var(--color-text-secondary); font-size: 9px;">Mensaje que aparecerá al final de tickets</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Logo (URL o Base64)</label>
+                        <input type="text" id="branch-business-logo-input" class="form-input" 
+                            placeholder="Ej: https://ejemplo.com/logo.png o data:image/png;base64,...">
+                        <small style="color: var(--color-text-secondary); font-size: 9px;">URL de imagen o datos en base64. Se usará en tickets y reportes.</small>
+                        <button type="button" class="btn-secondary btn-sm" onclick="window.Settings.uploadBranchLogo()" style="width: 100%; margin-top: var(--spacing-xs);">
+                            <i class="fas fa-upload"></i> Subir Logo
+                        </button>
+                    </div>
+                </div>
+                
                 <div class="form-group">
                     <label style="display: flex; align-items: center; gap: var(--spacing-xs);">
                         <input type="checkbox" id="branch-active-input" checked>
@@ -2363,6 +2424,15 @@ const Settings = {
         const phoneInput = document.getElementById('branch-phone-input');
         const activeInput = document.getElementById('branch-active-input');
         
+        // Datos empresariales
+        const businessNameInput = document.getElementById('branch-business-name-input');
+        const businessAddressInput = document.getElementById('branch-business-address-input');
+        const businessPhoneInput = document.getElementById('branch-business-phone-input');
+        const businessEmailInput = document.getElementById('branch-business-email-input');
+        const businessRfcInput = document.getElementById('branch-business-rfc-input');
+        const businessFooterInput = document.getElementById('branch-business-footer-input');
+        const businessLogoInput = document.getElementById('branch-business-logo-input');
+        
         if (!nameInput || !nameInput.value.trim()) {
             Utils.showNotification('El nombre es requerido', 'error');
             return;
@@ -2373,6 +2443,21 @@ const Settings = {
             const address = addressInput?.value.trim() || '';
             const phone = phoneInput?.value.trim() || '';
             const active = activeInput ? activeInput.checked : true;
+            
+            // Datos empresariales
+            const businessName = businessNameInput?.value.trim() || '';
+            const businessAddress = businessAddressInput?.value.trim() || '';
+            const businessPhone = businessPhoneInput?.value.trim() || '';
+            const businessEmail = businessEmailInput?.value.trim() || '';
+            const businessRfc = businessRfcInput?.value.trim() || '';
+            const businessFooter = businessFooterInput?.value.trim() || '';
+            const businessLogo = businessLogoInput?.value.trim() || '';
+            
+            // Validar email si se proporciona
+            if (businessEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessEmail)) {
+                Utils.showNotification('El formato del correo electrónico no es válido', 'error');
+                return;
+            }
             
             // Validaciones estrictas
             if (name.length < 2) {
@@ -2425,6 +2510,16 @@ const Settings = {
             branch.address = address;
             branch.phone = phone;
             branch.active = active;
+            
+            // Datos empresariales
+            branch.business_name = businessName;
+            branch.business_address = businessAddress;
+            branch.business_phone = businessPhone;
+            branch.business_email = businessEmail;
+            branch.business_rfc = businessRfc.toUpperCase();
+            branch.business_footer = businessFooter;
+            branch.business_logo = businessLogo;
+            
             branch.updated_at = new Date().toISOString();
 
             // Si se está desactivando, verificar que no haya dependencias críticas
@@ -2498,6 +2593,72 @@ const Settings = {
                     <input type="text" id="branch-phone-input" class="form-input" 
                         value="${Utils.escapeHtml(branch.phone || '')}" placeholder="Ej: (999) 123-4567" maxlength="20">
                 </div>
+                
+                <!-- Datos Empresariales -->
+                <div style="margin-top: var(--spacing-md); padding-top: var(--spacing-md); border-top: 2px solid var(--color-border-light);">
+                    <h4 style="font-size: 12px; font-weight: 600; margin-bottom: var(--spacing-sm); color: var(--color-primary);">
+                        <i class="fas fa-building"></i> Datos Empresariales (Personalización)
+                    </h4>
+                    <small style="color: var(--color-text-secondary); font-size: 10px; display: block; margin-bottom: var(--spacing-sm);">
+                        Estos datos se usarán en tickets, reportes y documentos generados para esta sucursal
+                    </small>
+                    
+                    <div class="form-group">
+                        <label>Nombre Comercial / Razón Social</label>
+                        <input type="text" id="branch-business-name-input" class="form-input" 
+                            value="${Utils.escapeHtml(branch.business_name || '')}" placeholder="Ej: Opal & Co Sucursal Centro" maxlength="200">
+                        <small style="color: var(--color-text-secondary); font-size: 9px;">Nombre que aparecerá en tickets y documentos</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Dirección Completa</label>
+                        <textarea id="branch-business-address-input" class="form-textarea" rows="3" 
+                            placeholder="Ej: Av. Principal #123, Col. Centro, CP 97000, Ciudad, Estado">${Utils.escapeHtml(branch.business_address || '')}</textarea>
+                        <small style="color: var(--color-text-secondary); font-size: 9px;">Dirección completa para documentos fiscales</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Teléfono de Contacto</label>
+                        <input type="text" id="branch-business-phone-input" class="form-input" 
+                            value="${Utils.escapeHtml(branch.business_phone || '')}" placeholder="Ej: +52 999 123 4567" maxlength="30">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Correo Electrónico</label>
+                        <input type="email" id="branch-business-email-input" class="form-input" 
+                            value="${Utils.escapeHtml(branch.business_email || '')}" placeholder="Ej: ventas@sucursal-centro.opal.com" maxlength="100">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>RFC (Registro Federal de Contribuyentes)</label>
+                        <input type="text" id="branch-business-rfc-input" class="form-input" 
+                            value="${Utils.escapeHtml(branch.business_rfc || '')}" placeholder="Ej: ABC123456789" maxlength="20">
+                        <small style="color: var(--color-text-secondary); font-size: 9px;">Para facturación y documentos fiscales</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Pie de Página Personalizado</label>
+                        <textarea id="branch-business-footer-input" class="form-textarea" rows="2" 
+                            placeholder="Ej: ¡Gracias por su compra! Visítenos pronto.">${Utils.escapeHtml(branch.business_footer || '')}</textarea>
+                        <small style="color: var(--color-text-secondary); font-size: 9px;">Mensaje que aparecerá al final de tickets</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Logo (URL o Base64)</label>
+                        <input type="text" id="branch-business-logo-input" class="form-input" 
+                            value="${Utils.escapeHtml(branch.business_logo || '')}" placeholder="Ej: https://ejemplo.com/logo.png o data:image/png;base64,...">
+                        <small style="color: var(--color-text-secondary); font-size: 9px;">URL de imagen o datos en base64. Se usará en tickets y reportes.</small>
+                        <button type="button" class="btn-secondary btn-sm" onclick="window.Settings.uploadBranchLogo()" style="width: 100%; margin-top: var(--spacing-xs);">
+                            <i class="fas fa-upload"></i> Subir Logo
+                        </button>
+                        ${branch.business_logo ? `
+                            <div style="margin-top: var(--spacing-xs); padding: var(--spacing-xs); background: var(--color-bg-secondary); border-radius: var(--radius-xs);">
+                                <img src="${Utils.escapeHtml(branch.business_logo)}" alt="Logo" style="max-width: 100px; max-height: 50px; object-fit: contain;" onerror="this.style.display='none'">
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                
                 <div class="form-group">
                     <label style="display: flex; align-items: center; gap: var(--spacing-xs);">
                         <input type="checkbox" id="branch-active-input" ${branch.active ? 'checked' : ''}>
@@ -4163,6 +4324,30 @@ const Settings = {
         } catch (e) {
             infoContainer.innerHTML = '<div style="color: var(--color-danger);">Error al cargar información</div>';
         }
+    },
+
+    async uploadBranchLogo() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            try {
+                // Convertir a base64
+                const base64 = await Utils.loadImageAsBlob(file);
+                const logoInput = document.getElementById('branch-business-logo-input');
+                if (logoInput) {
+                    logoInput.value = base64;
+                    Utils.showNotification('Logo cargado correctamente', 'success');
+                }
+            } catch (error) {
+                console.error('Error cargando logo:', error);
+                Utils.showNotification('Error al cargar el logo: ' + error.message, 'error');
+            }
+        };
+        input.click();
     },
 
     async loadSyncStatus() {
