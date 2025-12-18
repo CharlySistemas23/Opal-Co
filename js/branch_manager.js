@@ -220,6 +220,58 @@ const BranchManager = {
     },
 
     /**
+     * Obtener datos empresariales de la sucursal actual (o una específica)
+     * @param {string|null} branchId - ID de sucursal (null para usar la actual)
+     * @returns {Promise<Object>} Objeto con datos empresariales
+     */
+    async getBranchBusinessData(branchId = null) {
+        try {
+            const branch = branchId 
+                ? await DB.get('catalog_branches', branchId)
+                : await this.getCurrentBranch();
+            
+            if (!branch) {
+                // Fallback a configuración global si no hay sucursal
+                const businessName = await DB.get('settings', 'business_name');
+                const businessAddress = await DB.get('settings', 'business_address');
+                const businessPhone = await DB.get('settings', 'business_phone');
+                
+                return {
+                    name: businessName?.value || 'Opal & Co',
+                    address: businessAddress?.value || '',
+                    phone: businessPhone?.value || '',
+                    email: '',
+                    rfc: '',
+                    footer: '',
+                    logo: ''
+                };
+            }
+            
+            // Retornar datos empresariales de la sucursal, con fallback a datos básicos
+            return {
+                name: branch.business_name || branch.name || 'Opal & Co',
+                address: branch.business_address || branch.address || '',
+                phone: branch.business_phone || branch.phone || '',
+                email: branch.business_email || '',
+                rfc: branch.business_rfc || '',
+                footer: branch.business_footer || '',
+                logo: branch.business_logo || ''
+            };
+        } catch (e) {
+            console.error('Error getting branch business data:', e);
+            return {
+                name: 'Opal & Co',
+                address: '',
+                phone: '',
+                email: '',
+                rfc: '',
+                footer: '',
+                logo: ''
+            };
+        }
+    },
+
+    /**
      * Actualizar UI con la sucursal actual
      */
     async updateBranchUI() {
