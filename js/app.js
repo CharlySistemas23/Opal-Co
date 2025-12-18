@@ -4,10 +4,145 @@ const App = {
     loadingModule: null,
     moduleLoadAbort: null,
     
+    // Código de acceso de empresa (configurable)
+    COMPANY_ACCESS_CODE: 'OPAL2024', // Cambia este código por el que quieras
+    
+    async initCompanyCodeAccess() {
+        // Verificar si el código ya fue validado (guardado en localStorage)
+        const savedCodeHash = localStorage.getItem('company_code_validated');
+        const codeInput = document.getElementById('company-code-input');
+        const codeBtn = document.getElementById('company-code-btn');
+        const codeScreen = document.getElementById('company-code-screen');
+        const loginScreen = document.getElementById('login-screen');
+        const codeError = document.getElementById('company-code-error');
+        
+        // Si el código ya fue validado, mostrar directamente el login
+        if (savedCodeHash) {
+            const expectedHash = await this.hashCode(this.COMPANY_ACCESS_CODE);
+            if (savedCodeHash === expectedHash) {
+                if (codeScreen) codeScreen.style.display = 'none';
+                if (loginScreen) loginScreen.style.display = 'flex';
+                return;
+            } else {
+                // Código guardado es inválido, limpiar
+                localStorage.removeItem('company_code_validated');
+            }
+        }
+        
+        // Mostrar pantalla de código y ocultar login
+        if (codeScreen) codeScreen.style.display = 'flex';
+        if (loginScreen) loginScreen.style.display = 'none';
+        
+        // Handler para el botón de verificar código
+        if (codeBtn) {
+            codeBtn.addEventListener('click', async () => {
+                await this.validateCompanyCode();
+            });
+        }
+        
+        // Handler para Enter en el input
+        if (codeInput) {
+            codeInput.addEventListener('keypress', async (e) => {
+                if (e.key === 'Enter') {
+                    await this.validateCompanyCode();
+                }
+            });
+        }
+    },
+    
+    async validateCompanyCode() {
+        const codeInput = document.getElementById('company-code-input');
+        const codeScreen = document.getElementById('company-code-screen');
+        const loginScreen = document.getElementById('login-screen');
+        const codeError = document.getElementById('company-code-error');
+        const rememberCheckbox = document.getElementById('remember-company-code');
+        
+        if (!codeInput) return;
+        
+        const enteredCode = codeInput.value.trim();
+        
+        if (!enteredCode) {
+            if (codeError) {
+                codeError.textContent = 'Por favor, ingresa el código de acceso';
+                codeError.style.display = 'block';
+            }
+            return;
+        }
+        
+        // Validar código
+        if (enteredCode === this.COMPANY_ACCESS_CODE) {
+            // Código correcto
+            if (codeError) codeError.style.display = 'none';
+            
+            // Guardar validación si el usuario marcó "recordar"
+            if (rememberCheckbox && rememberCheckbox.checked) {
+                const codeHash = await this.hashCode(enteredCode);
+                localStorage.setItem('company_code_validated', codeHash);
+            }
+            
+            // Ocultar pantalla de código y mostrar login
+            if (codeScreen) codeScreen.style.display = 'none';
+            if (loginScreen) loginScreen.style.display = 'flex';
+            
+            // Enfocar el input de usuario del login
+            setTimeout(() => {
+                const userInput = document.getElementById('employee-barcode-input');
+                if (userInput) userInput.focus();
+            }, 100);
+        } else {
+            // Código incorrecto
+            if (codeError) {
+                codeError.textContent = 'Código de acceso incorrecto';
+                codeError.style.display = 'block';
+            }
+            if (codeInput) {
+                codeInput.value = '';
+                codeInput.focus();
+            }
+        }
+    },
+    
+    async hashCode(str) {
+        // Hash simple para validación (no es criptográficamente seguro, pero suficiente para este caso)
+        const encoder = new TextEncoder();
+        const data = encoder.encode(str);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    },
+    
     async init() {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:4',message:'App.init iniciando',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
         // #endregion
+        
+        // Protección: Ocultar enlace de bypass en producción
+        const isProduction = window.location.hostname.includes('vercel.app') || 
+                            window.location.hostname.includes('opal-co.vercel.app') ||
+                            (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1');
+        
+        if (isProduction) {
+            const helpFooter = document.getElementById('login-help-footer');
+            if (helpFooter) {
+                helpFooter.style.display = 'none';
+            }
+            // Eliminar bypassLogin de la consola en producción
+            setTimeout(() => {
+                if (window.bypassLogin) {
+                    const originalBypass = window.bypassLogin;
+                    window.bypassLogin = function() {
+                        console.error('⚠️ Acceso denegado: bypassLogin deshabilitado en producción');
+                        if (Utils && Utils.showNotification) {
+                            Utils.showNotification('Acceso no autorizado', 'error');
+                        }
+                    };
+                }
+            }, 100);
+        }
+        
+        // Inicializar sistema de código de acceso de empresa
+        await this.initCompanyCodeAccess();
+        
         try {
             // Initialize database
             await DB.init();
@@ -164,8 +299,21 @@ const App = {
                 }
             }, 2000);
 
-            // Bypass login function for debugging - ALWAYS AVAILABLE
+            // Bypass login function for debugging - DISABLED IN PRODUCTION
             window.bypassLogin = async function() {
+                // Verificar si estamos en producción (Vercel)
+                const isProduction = window.location.hostname.includes('vercel.app') || 
+                                    window.location.hostname.includes('opal-co.vercel.app') ||
+                                    window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+                
+                if (isProduction) {
+                    console.error('⚠️ bypassLogin está deshabilitado en producción por seguridad');
+                    if (Utils && Utils.showNotification) {
+                        Utils.showNotification('Acceso no autorizado. Por favor, inicia sesión correctamente.', 'error');
+                    }
+                    return;
+                }
+                
                 // #region agent log
                 fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:103',message:'bypassLogin llamado',data:{dbReady:!!DB.db},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
                 // #endregion
