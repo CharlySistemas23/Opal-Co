@@ -4,20 +4,57 @@ const Transfers = {
     initialized: false,
     
     async init() {
-        if (this.initialized) {
+        try {
+            // Asegurarse de que module-content existe
+            let content = document.getElementById('module-content');
+            if (!content) {
+                // Buscar el módulo placeholder
+                const placeholder = document.getElementById('module-placeholder');
+                if (placeholder) {
+                    placeholder.id = 'module-content';
+                    content = placeholder;
+                } else {
+                    console.error('No se encontró module-content ni module-placeholder');
+                    return;
+                }
+            }
+
+            if (this.initialized) {
+                await this.loadTransfers();
+                return;
+            }
+            
+            this.setupUI();
+            // Esperar un momento para que se cree el contenedor
+            await new Promise(resolve => setTimeout(resolve, 50));
             await this.loadTransfers();
-            return;
+            this.initialized = true;
+        } catch (e) {
+            console.error('Error inicializando módulo de transferencias:', e);
+            const content = document.getElementById('module-content');
+            if (content) {
+                content.innerHTML = `
+                    <div style="padding: var(--spacing-lg); text-align: center;">
+                        <p style="color: var(--color-danger);">Error al inicializar el módulo de transferencias</p>
+                        <p style="color: var(--color-text-secondary); font-size: 12px;">${e.message}</p>
+                        <button class="btn-primary" onclick="window.Transfers.init()" style="margin-top: var(--spacing-md);">
+                            Reintentar
+                        </button>
+                    </div>
+                `;
+            }
         }
-        this.setupUI();
-        await this.loadTransfers();
-        this.initialized = true;
     },
 
     setupUI() {
         const content = document.getElementById('module-content');
-        if (!content) return;
+        if (!content) {
+            console.error('module-content no encontrado en setupUI de Transfers');
+            return;
+        }
 
-        content.innerHTML = `
+        try {
+            content.innerHTML = `
             <div style="max-width: 100%;">
                 <!-- Header con acciones -->
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg); flex-wrap: wrap; gap: var(--spacing-md);">
@@ -71,7 +108,21 @@ const Transfers = {
             </div>
         `;
 
-        this.setupEventListeners();
+            this.setupEventListeners();
+        } catch (e) {
+            console.error('Error en setupUI de Transfers:', e);
+            if (content) {
+                content.innerHTML = `
+                    <div style="padding: var(--spacing-lg); text-align: center;">
+                        <p style="color: var(--color-danger);">Error al cargar el módulo de transferencias</p>
+                        <p style="color: var(--color-text-secondary); font-size: 12px;">${e.message}</p>
+                        <button class="btn-primary" onclick="window.Transfers.init()" style="margin-top: var(--spacing-md);">
+                            Reintentar
+                        </button>
+                    </div>
+                `;
+            }
+        }
     },
 
     async setupEventListeners() {
@@ -93,16 +144,57 @@ const Transfers = {
     },
 
     async loadTransfers() {
-        const container = document.getElementById('transfers-list-container');
-        if (!container) return;
+        let container = document.getElementById('transfers-list-container');
+        if (!container) {
+            console.error('transfers-list-container no encontrado. Reejecutando setupUI...');
+            // Si el contenedor no existe, puede ser que setupUI no se ejecutó correctamente
+            this.setupUI();
+            // Esperar un momento para que se cree el contenedor
+            await new Promise(resolve => setTimeout(resolve, 100));
+            container = document.getElementById('transfers-list-container');
+            if (!container) {
+                console.error('No se pudo crear transfers-list-container');
+                const content = document.getElementById('module-content');
+                if (content) {
+                    content.innerHTML = `
+                        <div style="padding: var(--spacing-lg); text-align: center;">
+                            <p style="color: var(--color-danger);">Error: No se pudo inicializar el módulo de transferencias</p>
+                            <button class="btn-primary" onclick="window.Transfers.init()" style="margin-top: var(--spacing-md);">
+                                Reintentar
+                            </button>
+                        </div>
+                    `;
+                }
+                return;
+            }
+        }
 
         try {
-            // Obtener todas las transferencias (filtradas por sucursal si no es admin)
-            const allTransfers = await DB.getAll('inventory_transfers', null, null, { 
-                filterByBranch: true, 
-                branchIdField: 'from_branch_id',
-                includeNull: true
-            }) || [];
+            // Obtener todas las transferencias
+            let allTransfers = [];
+            try {
+                allTransfers = await DB.getAll('inventory_transfers') || [];
+                
+                // Filtrar por sucursal si es necesario
+                if (typeof BranchManager !== 'undefined') {
+                    const currentBranchId = BranchManager.getCurrentBranchId();
+                    const isAdmin = typeof UserManager !== 'undefined' && 
+                                   (UserManager.currentUser?.role === 'admin' || 
+                                    UserManager.currentUser?.permissions?.includes('all'));
+                    
+                    if (!isAdmin && currentBranchId) {
+                        // Si no es admin, solo mostrar transferencias de su sucursal
+                        allTransfers = allTransfers.filter(t => 
+                            t.from_branch_id === currentBranchId || 
+                            t.to_branch_id === currentBranchId ||
+                            !t.from_branch_id // Incluir las que no tienen branch_id
+                        );
+                    }
+                }
+            } catch (dbError) {
+                console.error('Error obteniendo transferencias de DB:', dbError);
+                allTransfers = [];
+            }
 
             // Aplicar filtros
             const fromFilter = document.getElementById('transfer-filter-from')?.value;
@@ -143,15 +235,27 @@ const Transfers = {
             const getBranchName = (id) => branches.find(b => b.id === id)?.name || id;
 
             if (filtered.length === 0) {
-                container.innerHTML = `
-                    <div class="module" style="padding: var(--spacing-xl); text-align: center; background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
-                        <i class="fas fa-exchange-alt" style="font-size: 48px; color: var(--color-text-secondary); margin-bottom: var(--spacing-md);"></i>
-                        <p style="color: var(--color-text-secondary);">No hay transferencias registradas</p>
-                        <button class="btn-primary" onclick="window.Transfers.showNewTransferModal()" style="margin-top: var(--spacing-md);">
-                            <i class="fas fa-plus"></i> Crear Primera Transferencia
-                        </button>
-                    </div>
-                `;
+                const emptyContainer = document.getElementById('transfers-list-container');
+                if (emptyContainer) {
+                    emptyContainer.innerHTML = `
+                        <div class="module" style="padding: var(--spacing-xl); text-align: center; background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+                            <i class="fas fa-exchange-alt" style="font-size: 48px; color: var(--color-text-secondary); margin-bottom: var(--spacing-md);"></i>
+                            <p style="color: var(--color-text-secondary);">No hay transferencias registradas</p>
+                            <button class="btn-primary" onclick="window.Transfers.showNewTransferModal()" style="margin-top: var(--spacing-md);">
+                                <i class="fas fa-plus"></i> Crear Primera Transferencia
+                            </button>
+                        </div>
+                    `;
+                }
+                return;
+            }
+
+            // Asegurarse de que tenemos el contenedor
+            if (!container) {
+                container = document.getElementById('transfers-list-container');
+            }
+            if (!container) {
+                console.error('transfers-list-container no encontrado al renderizar');
                 return;
             }
 
@@ -160,8 +264,8 @@ const Transfers = {
                     <h3 style="margin-bottom: var(--spacing-md); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
                         <i class="fas fa-list"></i> Transferencias (${filtered.length})
                     </h3>
-                    <div style="overflow-x: auto;">
-                        <table class="data-table" style="width: 100%;">
+                    <div style="overflow-x: auto; width: 100%;">
+                        <table class="data-table" style="width: 100%; min-width: 800px;">
                             <thead>
                                 <tr>
                                     <th>Folio</th>
