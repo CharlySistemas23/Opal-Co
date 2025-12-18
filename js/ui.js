@@ -272,7 +272,12 @@ const UI = {
             'tourist-report': 'Reporte Turistas',
             'sync': 'Sincronización',
             'settings': 'Configuración',
-            'qa': 'QA / Autopruebas'
+            'qa': 'QA / Autopruebas',
+            'transfers': 'Transferencias entre Sucursales',
+            'inventory': 'Inventario',
+            'pos': 'POS',
+            'cash': 'Caja',
+            'dashboard': 'Dashboard'
         };
         return titles[moduleName] || 'Módulo';
     },
