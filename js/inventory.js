@@ -642,16 +642,21 @@ const Inventory = {
             
             // Agregar a cola de sincronización ANTES de eliminar (para que Google Sheets sepa que fue eliminado)
             if (typeof SyncManager !== 'undefined') {
-                // Guardar metadata en un store temporal para que prepareRecords pueda accederlo
-                await DB.add('sync_deleted_items', {
-                    id: itemId,
-                    entity_type: 'inventory_item',
-                    metadata: itemMetadata,
-                    deleted_at: new Date().toISOString()
-                });
-                
-                // Agregar a cola con action='delete'
-                await SyncManager.addToQueue('inventory_item', itemId, 'delete');
+                try {
+                    // Guardar metadata en un store temporal para que prepareRecords pueda accederlo
+                    await DB.add('sync_deleted_items', {
+                        id: itemId,
+                        entity_type: 'inventory_item',
+                        metadata: itemMetadata,
+                        deleted_at: new Date().toISOString()
+                    });
+                    
+                    // Agregar a cola con action='delete'
+                    await SyncManager.addToQueue('inventory_item', itemId, 'delete');
+                } catch (syncError) {
+                    console.error('Error guardando metadata para sincronización:', syncError);
+                    // Continuar con la eliminación aunque falle la sincronización
+                }
             }
             
             // Registrar la eliminación en el log
