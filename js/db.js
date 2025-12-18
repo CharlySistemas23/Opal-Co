@@ -222,6 +222,13 @@ const DB = {
             logStore.createIndex('created_at', 'created_at', { unique: false });
         }
 
+        // Sync Deleted Items (Metadata de items eliminados para sincronización)
+        if (!db.objectStoreNames.contains('sync_deleted_items')) {
+            const deletedStore = db.createObjectStore('sync_deleted_items', { keyPath: 'id' });
+            deletedStore.createIndex('entity_type', 'entity_type', { unique: false });
+            deletedStore.createIndex('deleted_at', 'deleted_at', { unique: false });
+        }
+
         // Tourist Reports
         if (!db.objectStoreNames.contains('tourist_reports')) {
             const tourStore = db.createObjectStore('tourist_reports', { keyPath: 'id' });
