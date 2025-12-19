@@ -328,8 +328,13 @@ const POS = {
                 includeNull: true  // Incluir items sin branch_id como fallback
             }) || [];
             
-            // Filtrar solo disponibles
-            items = items.filter(item => item && item.status === 'disponible');
+            // Filtrar solo disponibles Y con stock > 0
+            items = items.filter(item => {
+                if (!item || item.status !== 'disponible') return false;
+                // Verificar que tenga stock disponible
+                const stockActual = item.stock_actual ?? 1;
+                return stockActual > 0;
+            });
 
             // Filtro de búsqueda
             if (search) {
@@ -544,12 +549,17 @@ const POS = {
         
         try {
             const items = await DB.getAll('inventory_items') || [];
-            const match = items.find(item => 
-                item.status === 'disponible' && (
+            const match = items.find(item => {
+                if (item.status !== 'disponible') return false;
+                // Verificar stock disponible
+                const stockActual = item.stock_actual ?? 1;
+                if (stockActual <= 0) return false;
+                // Verificar match por SKU o código de barras
+                return (
                     item.sku?.toLowerCase() === query.toLowerCase() ||
                     item.barcode === query
-                )
-            );
+                );
+            });
 
             if (match) {
                 await this.selectProduct(match.id);
@@ -949,11 +959,17 @@ const POS = {
             if (!currentItem) continue;
             
             // Actualizar stock y estado del inventario
-            const newStock = Math.max(0, (currentItem.stock_actual ?? 1) - item.quantity);
+            const currentStock = currentItem.stock_actual ?? 1;
+            const newStock = Math.max(0, currentStock - item.quantity);
+            
+            // Solo cambiar status a 'vendida' si el stock llega a 0
+            // Si aún hay stock, mantener 'disponible'
+            const newStatus = newStock <= 0 ? 'vendida' : 'disponible';
+            
             await DB.put('inventory_items', {
                 ...currentItem,
                 stock_actual: newStock,
-                status: 'vendida',
+                status: newStatus,
                 updated_at: new Date().toISOString()
             });
 
@@ -1409,7 +1425,12 @@ const POS = {
 
         try {
             const items = await Promise.all(this.favorites.map(id => DB.get('inventory_items', id)));
-            const validItems = items.filter(item => item && item.status === 'disponible');
+            const validItems = items.filter(item => {
+                if (!item || item.status !== 'disponible') return false;
+                // Verificar stock disponible
+                const stockActual = item.stock_actual ?? 1;
+                return stockActual > 0;
+            });
 
             if (validItems.length === 0) {
                 Utils.showNotification('No hay favoritos disponibles', 'info');
