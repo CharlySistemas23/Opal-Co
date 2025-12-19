@@ -378,6 +378,7 @@ const SyncManager = {
                             console.warn(`Tipo de entidad desconocido en prepareRecords: ${entityType}`);
                             break;
                     }
+                }
                 
                 if (record) {
                     records.push(record);
