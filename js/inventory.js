@@ -262,11 +262,6 @@ const Inventory = {
         }
 
         try {
-            // #region agent log
-            const currentBranchId = typeof BranchManager !== 'undefined' ? BranchManager.getCurrentBranchId() : null;
-            fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'inventory.js:247',message:'loadInventory started',data:{currentBranchId:currentBranchId,hasBranchManager:typeof BranchManager!=='undefined'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
-            
             // Obtener items filtrados por sucursal
             const currentBranchId = typeof BranchManager !== 'undefined' 
                 ? BranchManager.getCurrentBranchId() 
