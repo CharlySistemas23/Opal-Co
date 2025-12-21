@@ -719,8 +719,10 @@ const SyncManager = {
 
             // Agregar headers después de crear la hoja
             // Determinar el nombre base de la hoja (sin sufijo de sucursal)
-            const baseSheetName = Object.values(this.getSheetName('')).find(base => sheetName.startsWith(base)) || 
-                                 sheetName.split(this.MULTI_BRANCH_CONFIG.BRANCH_SHEET_SUFFIX)[0];
+            let baseSheetName = sheetName;
+            if (sheetName.includes(this.MULTI_BRANCH_CONFIG.BRANCH_SHEET_SUFFIX)) {
+                baseSheetName = sheetName.split(this.MULTI_BRANCH_CONFIG.BRANCH_SHEET_SUFFIX)[0];
+            }
             const headers = this.getSheetHeaders(baseSheetName);
             if (headers.length > 0) {
                 await gapi.client.sheets.spreadsheets.values.update({
@@ -731,6 +733,8 @@ const SyncManager = {
                         values: [headers]
                     }
                 });
+                // Aplicar formato a los headers
+                await this.formatSheetHeaders(sheetName, headers.length);
             }
 
             return sheetName;
@@ -783,7 +787,9 @@ const SyncManager = {
             'AGENCY_ARRIVALS': ['ID', 'Fecha', 'ID Sucursal', 'ID Agencia', 'Pasajeros', 'Tipo Unidad', 'Costo Llegada', 'Notas', 'Fecha Creación', 'Fecha Actualización', 'Estado Sync', 'Sincronizado'],
             'DAILY_PROFIT_REPORTS': ['ID', 'Fecha', 'ID Sucursal', 'Revenue Ventas', 'COGS Total', 'Comisiones Vendedores', 'Comisiones Guías', 'Costos Llegadas', 'Costos Fijos Diarios', 'Costos Variables Diarios', 'Utilidad Antes Impuestos', 'Margen %', 'Total Pasajeros', 'Tipo Cambio', 'Fecha Creación', 'Fecha Actualización', 'Estado Sync', 'Sincronizado'],
             'EXCHANGE_RATES_DAILY': ['Fecha', 'USD', 'CAD', 'Fuente', 'Fecha Creación', 'Fecha Actualización', 'Sincronizado'],
-            'INVENTORY_TRANSFERS': ['ID', 'Folio', 'Sucursal Origen', 'Sucursal Destino', 'Estado', 'Cantidad Items', 'Notas', 'Fecha Creación', 'Fecha Actualización', 'Fecha Completado', 'Creado Por', 'Estado Sync', 'Sincronizado']
+            'INVENTORY_TRANSFERS': ['ID', 'Folio', 'Sucursal Origen', 'Sucursal Destino', 'Estado', 'Cantidad Items', 'Notas', 'Fecha Creación', 'Fecha Actualización', 'Fecha Completado', 'Creado Por', 'Estado Sync', 'Sincronizado'],
+            'CASH_SESSIONS': ['ID', 'Fecha', 'ID Sucursal', 'ID Usuario', 'Monto Inicial', 'Estado', 'Notas', 'Fecha Creación', 'Fecha Actualización', 'Sincronizado'],
+            'CASH_MOVEMENTS': ['ID', 'ID Sesión', 'Tipo', 'Monto', 'Descripción', 'Fecha', 'Fecha Creación', 'Sincronizado']
         };
         return headerMap[sheetName] || [];
     },
@@ -1052,6 +1058,60 @@ const SyncManager = {
                     record.sync_status || 'pending',
                     new Date().toISOString()
                 ];
+            case 'cash_session':
+                return [
+                    record.id,
+                    record.date || record.created_at || '',
+                    record.branch_id || '',
+                    record.user_id || '',
+                    record.initial_amount || 0,
+                    record.status || 'open',
+                    record.notes || '',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    new Date().toISOString()
+                ];
+            case 'cash_movement':
+                return [
+                    record.id,
+                    record.session_id || '',
+                    record.type || '',
+                    record.amount || 0,
+                    record.description || '',
+                    record.date || record.created_at || '',
+                    record.created_at || '',
+                    new Date().toISOString()
+                ];
+            case 'payment':
+                return [
+                    record.id,
+                    record.sale_id || '',
+                    record.method_id || '',
+                    record.amount || 0,
+                    record.currency || 'MXN',
+                    record.bank || '',
+                    record.payment_type || '',
+                    record.bank_commission || 0,
+                    record.created_at || ''
+                ];
+            case 'tourist_report':
+                return [
+                    record.id,
+                    record.date || '',
+                    record.branch_id || '',
+                    record.exchange_rate || 1,
+                    record.status || 'draft',
+                    record.observations || '',
+                    record.total_cash_usd || 0,
+                    record.total_cash_mxn || 0,
+                    record.subtotal || 0,
+                    record.additional || 0,
+                    record.total || 0,
+                    record.created_at || '',
+                    record.updated_at || '',
+                    record.device_id || 'unknown',
+                    new Date().toISOString()
+                ];
             default:
                 // Para tipos no mapeados, usar valores del objeto en orden alfabético
                 const keys = Object.keys(record).sort();
@@ -1140,6 +1200,152 @@ const SyncManager = {
                 success: false, 
                 error: e.message || 'Error desconocido al escribir en Google Sheets'
             };
+        }
+    },
+
+    async writeRecordsToSheet(targetSheetName, baseSheetName, entityType, records) {
+        // Escribir registros en la hoja especificada (puede ser branch o main)
+        const headers = this.getSheetHeaders(baseSheetName);
+        
+        // Verificar si la hoja tiene headers
+        let sheetInfo;
+        try {
+            sheetInfo = await gapi.client.sheets.spreadsheets.values.get({
+                spreadsheetId: this.spreadsheetId,
+                range: `${targetSheetName}!A1:Z1`
+            });
+        } catch (e) {
+            sheetInfo = { result: { values: null } };
+        }
+
+        let startRow = 1;
+        
+        // Si no hay headers, agregarlos
+        if (!sheetInfo.result.values || sheetInfo.result.values.length === 0 || !sheetInfo.result.values[0] || sheetInfo.result.values[0].length === 0) {
+            if (headers.length > 0) {
+                await gapi.client.sheets.spreadsheets.values.update({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${targetSheetName}!A1`,
+                    valueInputOption: 'RAW',
+                    resource: {
+                        values: [headers]
+                    }
+                });
+                // Aplicar formato a los headers
+                await this.formatSheetHeaders(targetSheetName, headers.length);
+            }
+            startRow = 2;
+        } else {
+            // Buscar la siguiente fila vacía
+            try {
+                const allData = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${targetSheetName}!A:Z`
+                });
+                startRow = (allData.result.values?.length || 1) + 1;
+            } catch (e) {
+                startRow = 2;
+            }
+        }
+
+        // Escribir los datos
+        if (records.length > 0) {
+            if (entityType === 'sale') {
+                // Para ventas, usar la función especializada
+                await this.writeSalesData(records, startRow, targetSheetName);
+            } else {
+                // Para otros tipos, convertir y escribir directamente
+                const rows = records.map(record => this.convertRecordToRow(entityType, record));
+                
+                await gapi.client.sheets.spreadsheets.values.append({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${targetSheetName}!A${startRow}`,
+                    valueInputOption: 'RAW',
+                    insertDataOption: 'INSERT_ROWS',
+                    resource: {
+                        values: rows
+                    }
+                });
+            }
+        }
+    },
+
+    async formatSheetHeaders(sheetName, numColumns) {
+        // Aplicar formato a los headers: negrita, fondo gris, texto blanco
+        try {
+            const sheetId = await this.getSheetId(sheetName);
+            if (!sheetId) {
+                console.warn(`No se pudo obtener sheetId para ${sheetName}, omitiendo formato`);
+                return;
+            }
+
+            await gapi.client.sheets.spreadsheets.batchUpdate({
+                spreadsheetId: this.spreadsheetId,
+                resource: {
+                    requests: [
+                        {
+                            repeatCell: {
+                                range: {
+                                    sheetId: sheetId,
+                                    startRowIndex: 0,
+                                    endRowIndex: 1,
+                                    startColumnIndex: 0,
+                                    endColumnIndex: numColumns
+                                },
+                                cell: {
+                                    userEnteredFormat: {
+                                        backgroundColor: {
+                                            red: 0.2,
+                                            green: 0.2,
+                                            blue: 0.2
+                                        },
+                                        textFormat: {
+                                            foregroundColor: {
+                                                red: 1.0,
+                                                green: 1.0,
+                                                blue: 1.0
+                                            },
+                                            fontSize: 10,
+                                            bold: true
+                                        },
+                                        horizontalAlignment: 'CENTER'
+                                    }
+                                },
+                                fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
+                            }
+                        },
+                        {
+                            updateSheetProperties: {
+                                properties: {
+                                    sheetId: sheetId,
+                                    gridProperties: {
+                                        frozenRowCount: 1
+                                    }
+                                },
+                                fields: 'gridProperties.frozenRowCount'
+                            }
+                        }
+                    ]
+                }
+            });
+            console.log(`✅ Formato aplicado a headers de ${sheetName}`);
+        } catch (error) {
+            console.warn(`⚠️ Error aplicando formato a headers de ${sheetName} (no crítico):`, error);
+            // No es crítico si falla el formato
+        }
+    },
+
+    async getSheetId(sheetName) {
+        // Obtener el ID de la hoja
+        try {
+            const response = await gapi.client.sheets.spreadsheets.get({
+                spreadsheetId: this.spreadsheetId
+            });
+            const sheet = response.result.sheets.find(s => s.properties.title === sheetName);
+            return sheet ? sheet.properties.sheetId : null;
+        } catch (error) {
+            console.error('Error obteniendo sheet ID:', error);
+            return null;
         }
     },
     
