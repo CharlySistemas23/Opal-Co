@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Opal & Co - Sistema POS</title>
-    <link rel="stylesheet" href="css/styles.css?v=20241220">
+    <link rel="stylesheet" href="css/styles.css?v=202512202023">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
@@ -841,9 +841,9 @@
         });
     </script>
     <!-- Librerías externas - Deben cargarse primero -->
-    <script src="libs/jspdf.umd.min.js?v=20241220"></script>
-    <script src="libs/xlsx.full.min.js?v=20241220"></script>
-    <script src="libs/JsBarcode.all.min.js?v=20241220"></script>
+    <script src="libs/jspdf.umd.min.js?v=202512202023"></script>
+    <script src="libs/xlsx.full.min.js?v=202512202023"></script>
+    <script src="libs/JsBarcode.all.min.js?v=202512202023"></script>
     
     <!-- Verificación de librerías -->
     <script>
@@ -869,17 +869,17 @@
         });
     </script>
     
-    <script src="js/utils.js?v=20241220"></script>
-    <script src="js/db.js?v=20241220"></script>
-    <script src="js/branch_manager.js?v=20241220"></script>
-    <script src="js/permission_manager.js?v=20241220"></script>
-    <script src="js/backup.js?v=20241220"></script>
-    <script src="js/barcodes.js?v=20241220"></script>
-    <script src="js/sync.js?v=20241220"></script>
-    <script src="js/ui.js?v=20241220"></script>
-    <script src="js/inventory.js?v=20241220"></script>
-    <script src="js/users.js?v=20241220"></script>
-    <script src="js/pos.js?v=20241220"></script>
+    <script src="js/utils.js?v=202512202023"></script>
+    <script src="js/db.js?v=202512202023"></script>
+    <script src="js/branch_manager.js?v=202512202023"></script>
+    <script src="js/permission_manager.js?v=202512202023"></script>
+    <script src="js/backup.js?v=202512202023"></script>
+    <script src="js/barcodes.js?v=202512202023"></script>
+    <script src="js/sync.js?v=202512202023"></script>
+    <script src="js/ui.js?v=202512202023"></script>
+    <script src="js/inventory.js?v=202512202023"></script>
+    <script src="js/users.js?v=202512202023"></script>
+    <script src="js/pos.js?v=202512202023"></script>
     <script>
         // #region agent log
         // Interceptor global para errores de onclick
@@ -897,27 +897,27 @@
             // #endregion
         }, 100);
     </script>
-    <script src="js/customers.js?v=20241220"></script>
-    <script src="js/employees.js?v=20241220"></script>
-    <script src="js/repairs.js?v=20241220"></script>
-    <script src="js/dashboard.js?v=20241220"></script>
-    <script src="js/reports.js?v=20241220"></script>
-    <script src="js/costs.js?v=20241220"></script>
-    <script src="js/tourist_report.js?v=20241220"></script>
-    <script src="js/cash.js?v=20241220"></script>
-    <script src="js/barcodes_module.js?v=20241220"></script>
-    <script src="js/settings.js?v=20241220"></script>
-    <script src="js/sync_ui.js?v=20241220"></script>
-    <script src="js/printer.js?v=20241220"></script>
-    <script src="js/arrival_rules.js?v=20241220"></script>
-    <script src="js/exchange_rates.js?v=20241220"></script>
-    <script src="js/profit.js?v=20241220"></script>
-    <script src="js/transfers.js?v=20241220"></script>
-    <script src="js/branch_validator.js?v=20241220"></script>
-    <script src="js/qa.js?v=20241220"></script>
-    <script src="js/system_auditor.js?v=20241220"></script>
-    <script src="js/jewelry_label_editor.js?v=20241220"></script>
-    <script src="js/app.js?v=20241220"></script>
+    <script src="js/customers.js?v=202512202023"></script>
+    <script src="js/employees.js?v=202512202023"></script>
+    <script src="js/repairs.js?v=202512202023"></script>
+    <script src="js/dashboard.js?v=202512202023"></script>
+    <script src="js/reports.js?v=202512202023"></script>
+    <script src="js/costs.js?v=202512202023"></script>
+    <script src="js/tourist_report.js?v=202512202023"></script>
+    <script src="js/cash.js?v=202512202023"></script>
+    <script src="js/barcodes_module.js?v=202512202023"></script>
+    <script src="js/settings.js?v=202512202023"></script>
+    <script src="js/sync_ui.js?v=202512202023"></script>
+    <script src="js/printer.js?v=202512202023"></script>
+    <script src="js/arrival_rules.js?v=202512202023"></script>
+    <script src="js/exchange_rates.js?v=202512202023"></script>
+    <script src="js/profit.js?v=202512202023"></script>
+    <script src="js/transfers.js?v=202512202023"></script>
+    <script src="js/branch_validator.js?v=202512202023"></script>
+    <script src="js/qa.js?v=202512202023"></script>
+    <script src="js/system_auditor.js?v=202512202023"></script>
+    <script src="js/jewelry_label_editor.js?v=202512202023"></script>
+    <script src="js/app.js?v=202512202023"></script>
     <script>
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.html:474',message:'Todos los scripts cargados',data:{DBReady:typeof DB!=='undefined'&&!!DB.db,AppReady:typeof App!=='undefined',UserManagerReady:typeof UserManager!=='undefined',createDemoUsersReady:typeof window.createDemoUsers==='function',bypassLoginReady:typeof window.bypassLogin==='function'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
