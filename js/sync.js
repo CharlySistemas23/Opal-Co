@@ -291,30 +291,45 @@ const SyncManager = {
                     const result = await this.sendToSheets(entityType, allRecords, items);
                     
                     if (result.success) {
-                        console.log(`✅ ${entityType} sincronizado exitosamente`);
-                        // Mark as synced
-                        for (const item of items) {
-                            await DB.put('sync_queue', {
-                                ...item,
-                                status: 'synced',
-                                last_attempt: new Date().toISOString()
-                            });
-                            
-                            // Si fue una eliminación, limpiar el store de eliminados después de sincronizar
-                            if (item.action === 'delete') {
-                                try {
-                                    await DB.delete('sync_deleted_items', item.entity_id);
-                                } catch (e) {
-                                    console.warn('Error limpiando sync_deleted_items:', e);
+                        // Si hay advertencia de CORS, mostrar advertencia pero no marcar como completamente exitoso
+                        if (result.corsBlocked) {
+                            console.warn(`⚠️ ${entityType} marcado como enviado pero CORS bloqueado - verificar en Google Sheets`);
+                            Utils.showNotification(
+                                `⚠️ ${entityType} enviado (CORS bloqueado - verifica en Google Sheets)`, 
+                                'warning'
+                            );
+                        } else {
+                            console.log(`✅ ${entityType} sincronizado exitosamente`);
+                        }
+                        
+                        // Mark as synced solo si realmente se enviaron datos
+                        if (allRecords.length > 0 || result.corsBlocked) {
+                            for (const item of items) {
+                                await DB.put('sync_queue', {
+                                    ...item,
+                                    status: 'synced',
+                                    last_attempt: new Date().toISOString()
+                                });
+                                
+                                // Si fue una eliminación, limpiar el store de eliminados después de sincronizar
+                                if (item.action === 'delete') {
+                                    try {
+                                        await DB.delete('sync_deleted_items', item.entity_id);
+                                    } catch (e) {
+                                        console.warn('Error limpiando sync_deleted_items:', e);
+                                    }
                                 }
                             }
+                            successCount += items.length;
+                            const deleteCount = deleteItems.length;
+                            const logMessage = deleteCount > 0 
+                                ? `Sincronizado: ${upsertItems.length} ${entityType}, ${deleteCount} eliminado(s)${result.corsBlocked ? ' (CORS bloqueado)' : ''}`
+                                : `Sincronizado: ${items.length} ${entityType}${result.corsBlocked ? ' (CORS bloqueado)' : ''}`;
+                            await this.addLog('success', logMessage, result.corsBlocked ? 'warning' : 'synced', Date.now() - startTime);
+                        } else {
+                            console.warn(`⚠️ No se enviaron registros para ${entityType} - no marcando como sincronizado`);
+                            throw new Error(`No se prepararon registros para ${entityType}`);
                         }
-                        successCount += items.length;
-                        const deleteCount = deleteItems.length;
-                        const logMessage = deleteCount > 0 
-                            ? `Sincronizado: ${upsertItems.length} ${entityType}, ${deleteCount} eliminado(s)`
-                            : `Sincronizado: ${items.length} ${entityType}`;
-                        await this.addLog('success', logMessage, 'synced', Date.now() - startTime);
                     } else {
                         console.error(`❌ Error sincronizando ${entityType}:`, result.error);
                         throw new Error(result.error || 'Error desconocido');
@@ -466,8 +481,31 @@ const SyncManager = {
                         case 'exchange_rate_daily':
                             record = await DB.get('exchange_rates_daily', id);
                             break;
+                        case 'cash_session':
+                            record = await DB.get('cash_sessions', id);
+                            if (record) {
+                                const movements = await DB.query('cash_movements', 'session_id', id);
+                                record.movements = movements;
+                            }
+                            break;
+                        case 'cash_movement':
+                            record = await DB.get('cash_movements', id);
+                            break;
+                        case 'payment':
+                            record = await DB.get('payments', id);
+                            break;
                         default:
-                            console.warn(`Tipo de entidad desconocido en prepareRecords: ${entityType}`);
+                            console.warn(`⚠️ Tipo de entidad desconocido en prepareRecords: ${entityType}`);
+                            // Intentar obtener el record directamente por el nombre de la tabla
+                            try {
+                                const tableName = entityType.replace(/_/g, '_');
+                                record = await DB.get(tableName, id);
+                                if (record) {
+                                    console.log(`✅ Record obtenido directamente de ${tableName}`);
+                                }
+                            } catch (e) {
+                                console.error(`❌ No se pudo obtener record de ${entityType}:`, e);
+                            }
                             break;
                     }
                 }
@@ -588,11 +626,13 @@ const SyncManager = {
                     clearTimeout(noCorsTimeoutId);
                     console.log('📤 Petición enviada con no-cors (no se puede verificar respuesta)');
                     
-                    // Con no-cors, asumimos éxito si no hay error de red
+                    // IMPORTANTE: Con no-cors, NO podemos verificar si realmente se envió
+                    // Mostrar advertencia pero marcar como "posiblemente exitoso"
                     return { 
                         success: true, 
-                        message: 'Datos enviados a Google Sheets (modo no-cors, respuesta no verificable)',
-                        warning: 'No se pudo verificar la respuesta del servidor'
+                        message: 'Datos enviados a Google Sheets (modo no-cors)',
+                        warning: '⚠️ ADVERTENCIA: No se pudo verificar la respuesta. Los datos pueden no haberse enviado correctamente debido a CORS. Verifica en Google Sheets.',
+                        corsBlocked: true
                     };
                 } catch (noCorsError) {
                     clearTimeout(noCorsTimeoutId);
