@@ -840,8 +840,9 @@ const Inventory = {
             }
             
             // Registrar la eliminación en el log
+            const logId = Utils.generateId();
             await DB.add('inventory_logs', {
-                id: Utils.generateId(),
+                id: logId,
                 item_id: itemId,
                 action: 'eliminado',
                 quantity: 1,
@@ -849,6 +850,15 @@ const Inventory = {
                 item_data: JSON.stringify(item), // Guardar copia del item eliminado
                 created_at: new Date().toISOString()
             });
+            
+            // Agregar a cola de sincronización
+            if (typeof SyncManager !== 'undefined') {
+                try {
+                    await SyncManager.addToQueue('inventory_log', logId);
+                } catch (syncError) {
+                    console.error('Error agregando inventory_log a cola:', syncError);
+                }
+            }
             
             // Eliminar el item de la base de datos
             try {
@@ -1064,8 +1074,9 @@ const Inventory = {
         
         // Registrar movimiento de stock si hubo cambio
         if (stockChange !== 0) {
+            const logId = Utils.generateId();
             await DB.add('inventory_logs', {
-                id: Utils.generateId(),
+                id: logId,
                 item_id: itemId,
                 action: stockChange > 0 ? 'entrada' : 'salida',
                 quantity: Math.abs(stockChange),
@@ -1075,17 +1086,36 @@ const Inventory = {
                 notes: notes || `Stock ajustado de ${oldStock} a ${stockActual}`,
                 created_at: new Date().toISOString()
             });
+            
+            // Agregar a cola de sincronización
+            if (typeof SyncManager !== 'undefined') {
+                try {
+                    await SyncManager.addToQueue('inventory_log', logId);
+                } catch (syncError) {
+                    console.error('Error agregando inventory_log a cola:', syncError);
+                }
+            }
         }
         
         // Registrar cambio de configuración
+        const configLogId = Utils.generateId();
         await DB.add('inventory_logs', {
-            id: Utils.generateId(),
+            id: configLogId,
             item_id: itemId,
             action: 'config_stock',
             quantity: 0,
             notes: `Configuración de stock actualizada - Mín: ${stockMin}, Máx: ${stockMax}`,
             created_at: new Date().toISOString()
         });
+        
+        // Agregar a cola de sincronización
+        if (typeof SyncManager !== 'undefined') {
+            try {
+                await SyncManager.addToQueue('inventory_log', configLogId);
+            } catch (syncError) {
+                console.error('Error agregando inventory_log a cola:', syncError);
+            }
+        }
         
         // Emitir evento de actualización de inventario
         if (typeof Utils !== 'undefined' && Utils.EventBus) {
@@ -1897,8 +1927,9 @@ const Inventory = {
         
         // Registrar cambio de stock si es edición y cambió
         if (itemId && existingItem && existingItem.stock_actual !== stockActual) {
+            const logId = Utils.generateId();
             await DB.add('inventory_logs', {
-                id: Utils.generateId(),
+                id: logId,
                 item_id: item.id,
                 action: stockActual > (existingItem.stock_actual || 0) ? 'entrada' : 'salida',
                 quantity: Math.abs(stockActual - (existingItem.stock_actual || 0)),
@@ -1908,6 +1939,15 @@ const Inventory = {
                 notes: `Stock modificado durante edición de ${existingItem.stock_actual || 0} a ${stockActual}`,
                 created_at: new Date().toISOString()
             });
+            
+            // Agregar a cola de sincronización
+            if (typeof SyncManager !== 'undefined') {
+                try {
+                    await SyncManager.addToQueue('inventory_log', logId);
+                } catch (syncError) {
+                    console.error('Error agregando inventory_log a cola:', syncError);
+                }
+            }
         }
 
         // Guardar certificado si existe
@@ -1978,14 +2018,24 @@ const Inventory = {
         }
 
         // Log inventory change
+        const logId = Utils.generateId();
         await DB.add('inventory_logs', {
-            id: Utils.generateId(),
+            id: logId,
             item_id: item.id,
             action: itemId ? 'actualizada' : 'alta',
             quantity: 1,
             notes: itemId ? 'Pieza actualizada' : 'Nueva pieza',
             created_at: new Date().toISOString()
         });
+        
+        // Agregar a cola de sincronización
+        if (typeof SyncManager !== 'undefined') {
+            try {
+                await SyncManager.addToQueue('inventory_log', logId);
+            } catch (syncError) {
+                console.error('Error agregando inventory_log a cola:', syncError);
+            }
+        }
 
         // Registrar costo de adquisición en Costs si es un nuevo item o cambió el costo
         if (typeof Costs !== 'undefined' && item.cost > 0) {
@@ -2248,14 +2298,24 @@ const Inventory = {
                     };
 
                     await DB.put('inventory_items', item);
+                    const logId = Utils.generateId();
                     await DB.add('inventory_logs', {
-                        id: Utils.generateId(),
+                        id: logId,
                         item_id: item.id,
                         action: 'alta',
                         quantity: 1,
                         notes: 'Importado desde CSV',
                         created_at: new Date().toISOString()
                     });
+                    
+                    // Agregar a cola de sincronización
+                    if (typeof SyncManager !== 'undefined') {
+                        try {
+                            await SyncManager.addToQueue('inventory_log', logId);
+                        } catch (syncError) {
+                            console.error('Error agregando inventory_log a cola:', syncError);
+                        }
+                    }
                     imported++;
                 } catch (e) {
                     console.error(`Error importing row ${i}:`, e);
