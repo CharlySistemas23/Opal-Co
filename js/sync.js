@@ -555,9 +555,21 @@ const SyncManager = {
 
         console.log(`📤 Enviando ${upsertRecords.length} registros y ${deleteRecords.length} eliminaciones de tipo ${entityType} a Google Sheets...`);
 
+        // Calcular timeout dinámico basado en el tamaño del payload
+        // Mínimo 30 segundos, máximo 120 segundos
+        // Agregar 1 segundo por cada 10KB de datos
+        const payloadSize = JSON.stringify(upsertRecords).length;
+        const baseTimeout = timeout || 30000; // Convertir a milisegundos si viene en segundos
+        const dynamicTimeout = Math.min(Math.max(baseTimeout, 30000), 120000) + Math.floor(payloadSize / 10240);
+        
+        console.log(`⏱️ Timeout configurado: ${dynamicTimeout}ms para ${entityType} (payload: ${Math.round(payloadSize/1024)}KB)`);
+
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            const timeoutId = setTimeout(() => {
+                console.warn(`⏱️ Timeout después de ${dynamicTimeout}ms para ${entityType}`);
+                controller.abort();
+            }, dynamicTimeout);
 
             const payload = {
                 token: this.syncToken,
@@ -587,6 +599,7 @@ const SyncManager = {
             let responseData = null;
             
             try {
+                // Primero intentar con fetch normal (cors)
                 response = await fetch(this.syncUrl, {
                     method: 'POST',
                     mode: 'cors',
@@ -595,7 +608,9 @@ const SyncManager = {
                     },
                     body: JSON.stringify(payload),
                     redirect: 'follow',
-                    signal: controller.signal
+                    signal: controller.signal,
+                    // Agregar keepalive para peticiones grandes
+                    keepalive: true
                 });
 
                 clearTimeout(timeoutId);
@@ -626,15 +641,29 @@ const SyncManager = {
                     throw new Error(`Error HTTP ${response.status}: ${errorText}`);
                 }
             } catch (corsError) {
-                // Si falla CORS, intentar con no-cors como fallback
-                console.warn('⚠️ Error con CORS, intentando con no-cors:', corsError.message);
+                // Si falla CORS, verificar si es un error de red o de CORS
+                console.warn('⚠️ Error con CORS:', corsError.message);
+                
+                // Si es un AbortError (timeout), no intentar con no-cors
+                if (corsError.name === 'AbortError') {
+                    clearTimeout(timeoutId);
+                    throw corsError;
+                }
+                
+                // Si es un error de CORS real, intentar con no-cors como último recurso
+                // PERO: no-cors no permite leer la respuesta, así que no podemos verificar si funcionó
+                console.warn('⚠️ Intentando con no-cors como último recurso...');
                 
                 clearTimeout(timeoutId);
                 const noCorsController = new AbortController();
-                const noCorsTimeoutId = setTimeout(() => noCorsController.abort(), timeout);
+                const noCorsTimeoutId = setTimeout(() => {
+                    console.warn(`⏱️ Timeout no-cors después de ${dynamicTimeout}ms`);
+                    noCorsController.abort();
+                }, dynamicTimeout);
                 
                 try {
-                    response = await fetch(this.syncUrl, {
+                    // Con no-cors, no podemos leer la respuesta, pero podemos intentar enviar
+                    const noCorsResponse = await fetch(this.syncUrl, {
                         method: 'POST',
                         mode: 'no-cors', // Fallback: no-cors
                         headers: {
@@ -642,30 +671,48 @@ const SyncManager = {
                         },
                         body: JSON.stringify(payload),
                         redirect: 'follow',
-                        signal: noCorsController.signal
+                        signal: noCorsController.signal,
+                        keepalive: true
                     });
 
                     clearTimeout(noCorsTimeoutId);
-                    console.error('❌ FALLO CRÍTICO: no-cors no es confiable para Google Apps Script');
                     
-                    // CRÍTICO: no-cors NO funciona bien con Google Apps Script
-                    // Los datos probablemente NO se están enviando
+                    // Con no-cors, la respuesta siempre es "opaque" y no podemos leerla
+                    // Esto significa que NO podemos verificar si los datos se enviaron correctamente
+                    console.error('❌ FALLO CRÍTICO: no-cors no permite verificar si los datos se enviaron');
+                    console.error('❌ La respuesta es "opaque" y no podemos leer el estado');
+                    
+                    // CRÍTICO: no-cors NO es confiable para Google Apps Script
+                    // Los datos PUEDEN haberse enviado, pero no podemos verificarlo
                     // NO marcar como exitoso - marcar como error para que se reintente
                     return { 
                         success: false, 
-                        error: 'CORS bloqueado: Google Apps Script no está configurado para recibir peticiones desde este dominio. ACTUALIZA el Google Apps Script con los headers CORS y vuelve a desplegar la aplicación web.',
+                        error: 'CORS bloqueado: No se pudo verificar si los datos se enviaron. Google Apps Script debe estar configurado con CORS. ACTUALIZA el Google Apps Script con doOptions() y headers CORS, luego vuelve a desplegar la aplicación web.',
                         corsBlocked: true,
-                        requiresAction: 'Necesitas actualizar Google Apps Script y configurar CORS'
+                        requiresAction: 'Necesitas actualizar Google Apps Script y configurar CORS correctamente'
                     };
                 } catch (noCorsError) {
                     clearTimeout(noCorsTimeoutId);
-                    throw noCorsError;
+                    // Si no-cors también falla, lanzar el error original de CORS
+                    throw corsError;
                 }
             }
         } catch (e) {
             console.error('❌ Error enviando a Google Sheets:', e);
             if (e.name === 'AbortError') {
-                return { success: false, error: 'Timeout: La sincronización tardó demasiado' };
+                return { 
+                    success: false, 
+                    error: `Timeout: La sincronización tardó demasiado (más de ${Math.round(dynamicTimeout/1000)} segundos). Intenta aumentar el timeout en configuración o reducir el tamaño del lote.`,
+                    timeout: true
+                };
+            }
+            // Si es un error de red, puede ser CORS o conexión
+            if (e.message && (e.message.includes('Failed to fetch') || e.message.includes('NetworkError'))) {
+                return { 
+                    success: false, 
+                    error: 'Error de red: No se pudo conectar con Google Apps Script. Verifica que la URL esté correcta y que el script esté desplegado.',
+                    networkError: true
+                };
             }
             return { success: false, error: e.message || 'Error desconocido' };
         }
