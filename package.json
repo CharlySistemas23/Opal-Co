@@ -2,5 +2,8 @@
   "name": "opal-co-pos",
   "version": "1.0.0",
   "description": "Sistema POS Multisucursal Opal & Co",
-  "scripts": {}
+  "scripts": {
+    "build": "echo 'No build needed for static site'"
+  }
 }
+
