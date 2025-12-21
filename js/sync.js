@@ -12,6 +12,15 @@ const SyncManager = {
     gsiLoaded: false,
     isAuthenticated: false,
     
+    // Cache de hojas para evitar llamadas repetidas
+    sheetsCache: null,
+    sheetsCacheTimestamp: null,
+    sheetsCacheTTL: 5 * 60 * 1000, // 5 minutos
+    
+    // Rate limiting
+    lastRequestTime: 0,
+    minRequestDelay: 200, // 200ms entre solicitudes mínimo
+    
     // Configuración multisucursal
     MULTI_BRANCH_CONFIG: {
         SEPARATE_SHEETS: true, // true = hojas separadas por sucursal, false = una hoja con columna branch_id
@@ -247,19 +256,19 @@ const SyncManager = {
             return;
         }
         
-        // Crear/actualizar índice al inicio de la sincronización
+        // Crear/actualizar índice al inicio de la sincronización (solo si no existe)
         try {
-            await this.createIndexSheet();
+            const sheets = await this.getSheetsList();
+            const indexExists = sheets.some(s => s.properties.title === '📊 ÍNDICE');
+            if (!indexExists) {
+                await this.createIndexSheet();
+            }
         } catch (indexError) {
             console.warn('⚠️ Error creando índice (no crítico):', indexError);
         }
         
-        // Aplicar formato a todas las hojas existentes (si no lo tienen ya)
-        try {
-            await this.ensureAllSheetsFormatted();
-        } catch (formatError) {
-            console.warn('⚠️ Error aplicando formato a hojas (no crítico):', formatError);
-        }
+        // NO aplicar formato a todas las hojas al inicio para evitar rate limiting
+        // El formato se aplicará automáticamente cuando se creen nuevas hojas
 
         if (this.isSyncing) {
             Utils.showNotification('Sincronización en progreso...', 'info');
@@ -700,6 +709,54 @@ const SyncManager = {
         }
     },
 
+    async rateLimitedRequest(requestFn, retries = 3) {
+        // Rate limiting: esperar al menos minRequestDelay entre solicitudes
+        const now = Date.now();
+        const timeSinceLastRequest = now - this.lastRequestTime;
+        if (timeSinceLastRequest < this.minRequestDelay) {
+            await new Promise(resolve => setTimeout(resolve, this.minRequestDelay - timeSinceLastRequest));
+        }
+        this.lastRequestTime = Date.now();
+
+        // Intentar con retry y exponential backoff para errores 429
+        for (let attempt = 0; attempt < retries; attempt++) {
+            try {
+                return await requestFn();
+            } catch (error) {
+                const is429 = error.status === 429 || (error.result && error.result.error && error.result.error.code === 429);
+                
+                if (is429 && attempt < retries - 1) {
+                    // Exponential backoff: 2^attempt segundos
+                    const delay = Math.min(1000 * Math.pow(2, attempt), 10000); // Máximo 10 segundos
+                    console.warn(`⚠️ Rate limit alcanzado (429), esperando ${delay}ms antes de reintentar (intento ${attempt + 1}/${retries})...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+                
+                throw error;
+            }
+        }
+    },
+
+    async getSheetsList(forceRefresh = false) {
+        // Cachear la lista de hojas para evitar llamadas repetidas
+        const now = Date.now();
+        if (!forceRefresh && this.sheetsCache && this.sheetsCacheTimestamp && 
+            (now - this.sheetsCacheTimestamp) < this.sheetsCacheTTL) {
+            return this.sheetsCache;
+        }
+
+        const response = await this.rateLimitedRequest(() => 
+            gapi.client.sheets.spreadsheets.get({
+                spreadsheetId: this.spreadsheetId
+            })
+        );
+
+        this.sheetsCache = response.result.sheets;
+        this.sheetsCacheTimestamp = now;
+        return this.sheetsCache;
+    },
+
     async getOrCreateSheet(sheetName) {
         if (!this.spreadsheetId) {
             throw new Error('Spreadsheet ID no configurado. Configúralo en Configuración → Sincronización');
@@ -708,30 +765,32 @@ const SyncManager = {
         await this.ensureAuthenticated();
 
         try {
-            // Intentar obtener la hoja
-            const response = await gapi.client.sheets.spreadsheets.get({
-                spreadsheetId: this.spreadsheetId
-            });
-
-            const sheet = response.result.sheets.find(s => s.properties.title === sheetName);
+            // Usar cache para verificar si la hoja existe
+            const sheets = await this.getSheetsList();
+            const sheet = sheets.find(s => s.properties.title === sheetName);
             if (sheet) {
                 return sheetName;
             }
 
             // Si no existe, crear la hoja
             console.log(`📄 Creando hoja: ${sheetName}`);
-            await gapi.client.sheets.spreadsheets.batchUpdate({
-                spreadsheetId: this.spreadsheetId,
-                resource: {
-                    requests: [{
-                        addSheet: {
-                            properties: {
-                                title: sheetName
+            await this.rateLimitedRequest(() =>
+                gapi.client.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: this.spreadsheetId,
+                    resource: {
+                        requests: [{
+                            addSheet: {
+                                properties: {
+                                    title: sheetName
+                                }
                             }
-                        }
-                    }]
-                }
-            });
+                        }]
+                    }
+                })
+            );
+
+            // Invalidar cache para refrescar la lista
+            this.sheetsCache = null;
 
             // Agregar headers después de crear la hoja
             // Determinar el nombre base de la hoja (sin sufijo de sucursal)
@@ -741,21 +800,28 @@ const SyncManager = {
             }
             const headers = this.getSheetHeaders(baseSheetName);
             if (headers.length > 0) {
-                await gapi.client.sheets.spreadsheets.values.update({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `${sheetName}!A1`,
-                    valueInputOption: 'RAW',
-                    resource: {
-                        values: [headers]
-                    }
-                });
-                // Aplicar formato a los headers
+                await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.update({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `${sheetName}!A1`,
+                        valueInputOption: 'RAW',
+                        resource: {
+                            values: [headers]
+                        }
+                    })
+                );
+                // Aplicar formato a los headers (con delay adicional)
+                await new Promise(resolve => setTimeout(resolve, 300));
                 await this.formatSheetHeaders(sheetName, headers.length);
             }
 
             return sheetName;
         } catch (error) {
             console.error(`Error obteniendo/creando hoja ${sheetName}:`, error);
+            // Si es error 429, invalidar cache para forzar refresh
+            if (error.status === 429 || (error.result && error.result.error && error.result.error.code === 429)) {
+                this.sheetsCache = null;
+            }
             throw error;
         }
     },
@@ -1240,10 +1306,12 @@ const SyncManager = {
         // Verificar si la hoja tiene headers
         let sheetInfo;
         try {
-            sheetInfo = await gapi.client.sheets.spreadsheets.values.get({
-                spreadsheetId: this.spreadsheetId,
-                range: `${targetSheetName}!A1:Z1`
-            });
+            sheetInfo = await this.rateLimitedRequest(() =>
+                gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${targetSheetName}!A1:Z1`
+                })
+            );
         } catch (e) {
             sheetInfo = { result: { values: null } };
         }
@@ -1253,25 +1321,30 @@ const SyncManager = {
         // Si no hay headers, agregarlos
         if (!sheetInfo.result.values || sheetInfo.result.values.length === 0 || !sheetInfo.result.values[0] || sheetInfo.result.values[0].length === 0) {
             if (headers.length > 0) {
-                await gapi.client.sheets.spreadsheets.values.update({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `${targetSheetName}!A1`,
-                    valueInputOption: 'RAW',
-                    resource: {
-                        values: [headers]
-                    }
-                });
-                // Aplicar formato a los headers
+                await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.update({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `${targetSheetName}!A1`,
+                        valueInputOption: 'RAW',
+                        resource: {
+                            values: [headers]
+                        }
+                    })
+                );
+                // Aplicar formato a los headers (con delay adicional)
+                await new Promise(resolve => setTimeout(resolve, 300));
                 await this.formatSheetHeaders(targetSheetName, headers.length);
             }
             startRow = 2;
         } else {
             // Buscar la siguiente fila vacía
             try {
-                const allData = await gapi.client.sheets.spreadsheets.values.get({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `${targetSheetName}!A:Z`
-                });
+                const allData = await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.get({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `${targetSheetName}!A:Z`
+                    })
+                );
                 startRow = (allData.result.values?.length || 1) + 1;
             } catch (e) {
                 startRow = 2;
@@ -1287,15 +1360,17 @@ const SyncManager = {
                 // Para otros tipos, convertir y escribir directamente
                 const rows = records.map(record => this.convertRecordToRow(entityType, record));
                 
-                await gapi.client.sheets.spreadsheets.values.append({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `${targetSheetName}!A${startRow}`,
-                    valueInputOption: 'RAW',
-                    insertDataOption: 'INSERT_ROWS',
-                    resource: {
-                        values: rows
-                    }
-                });
+                await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.append({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `${targetSheetName}!A${startRow}`,
+                        valueInputOption: 'RAW',
+                        insertDataOption: 'INSERT_ROWS',
+                        resource: {
+                            values: rows
+                        }
+                    })
+                );
             }
         }
     },
@@ -1309,10 +1384,11 @@ const SyncManager = {
                 return;
             }
 
-            await gapi.client.sheets.spreadsheets.batchUpdate({
-                spreadsheetId: this.spreadsheetId,
-                resource: {
-                    requests: [
+            await this.rateLimitedRequest(() =>
+                gapi.client.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: this.spreadsheetId,
+                    resource: {
+                        requests: [
                         {
                             repeatCell: {
                                 range: {
@@ -1357,7 +1433,8 @@ const SyncManager = {
                         }
                     ]
                 }
-            });
+                })
+            );
             console.log(`✅ Formato aplicado a headers de ${sheetName}`);
         } catch (error) {
             console.warn(`⚠️ Error aplicando formato a headers de ${sheetName} (no crítico):`, error);
@@ -1366,12 +1443,10 @@ const SyncManager = {
     },
 
     async getSheetId(sheetName) {
-        // Obtener el ID de la hoja
+        // Obtener el ID de la hoja usando cache
         try {
-            const response = await gapi.client.sheets.spreadsheets.get({
-                spreadsheetId: this.spreadsheetId
-            });
-            const sheet = response.result.sheets.find(s => s.properties.title === sheetName);
+            const sheets = await this.getSheetsList();
+            const sheet = sheets.find(s => s.properties.title === sheetName);
             return sheet ? sheet.properties.sheetId : null;
         } catch (error) {
             console.error('Error obteniendo sheet ID:', error);
@@ -1423,19 +1498,23 @@ const SyncManager = {
 
             if (!sheetExists) {
                 // Crear la hoja
-                await gapi.client.sheets.spreadsheets.batchUpdate({
-                    spreadsheetId: this.spreadsheetId,
-                    resource: {
-                        requests: [{
-                            addSheet: {
-                                properties: {
-                                    title: indexSheetName,
-                                    index: 0 // Insertar al inicio
+                await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: this.spreadsheetId,
+                        resource: {
+                            requests: [{
+                                addSheet: {
+                                    properties: {
+                                        title: indexSheetName,
+                                        index: 0 // Insertar al inicio
+                                    }
                                 }
-                            }
-                        }]
-                    }
-                });
+                            }]
+                        }
+                    })
+                );
+                // Invalidar cache
+                this.sheetsCache = null;
             }
 
             // Crear los datos de la hoja
@@ -1451,20 +1530,23 @@ const SyncManager = {
             ];
 
             // Escribir valores
-            await gapi.client.sheets.spreadsheets.values.update({
-                spreadsheetId: this.spreadsheetId,
-                range: `${indexSheetName}!A1`,
-                valueInputOption: 'RAW',
-                resource: { values }
-            });
+            await this.rateLimitedRequest(() =>
+                gapi.client.sheets.spreadsheets.values.update({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${indexSheetName}!A1`,
+                    valueInputOption: 'RAW',
+                    resource: { values }
+                })
+            );
 
             // Aplicar formato
             const indexSheetId = await this.getSheetId(indexSheetName);
             if (indexSheetId) {
-                await gapi.client.sheets.spreadsheets.batchUpdate({
-                    spreadsheetId: this.spreadsheetId,
-                    resource: {
-                        requests: [
+                await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: this.spreadsheetId,
+                        resource: {
+                            requests: [
                             // Formato título (fila 1)
                             {
                                 repeatCell: {
@@ -1633,10 +1715,12 @@ const SyncManager = {
                             }
                         ]
                     }
-                });
+                    })
+                );
             }
 
-            // Actualizar conteos
+            // Actualizar conteos (con delay para evitar rate limiting)
+            await new Promise(resolve => setTimeout(resolve, 500));
             await this.updateIndexSheet();
         } catch (error) {
             console.error('Error creando índice:', error);
@@ -1644,39 +1728,12 @@ const SyncManager = {
         }
     },
 
+    // Función deshabilitada para evitar rate limiting
+    // El formato se aplica automáticamente cuando se crean nuevas hojas
     async ensureAllSheetsFormatted() {
-        // Aplicar formato a todas las hojas que no sean el índice
-        try {
-            const response = await gapi.client.sheets.spreadsheets.get({
-                spreadsheetId: this.spreadsheetId
-            });
-            const allSheets = response.result.sheets;
-            const indexSheetName = '📊 ÍNDICE';
-            
-            for (const sheet of allSheets) {
-                const sheetName = sheet.properties.title;
-                if (sheetName === indexSheetName) continue; // Saltar el índice
-                
-                // Verificar si tiene headers
-                try {
-                    const headersData = await gapi.client.sheets.spreadsheets.values.get({
-                        spreadsheetId: this.spreadsheetId,
-                        range: `${sheetName}!A1:Z1`
-                    });
-                    
-                    if (headersData.result.values && headersData.result.values.length > 0 && headersData.result.values[0]) {
-                        const numColumns = headersData.result.values[0].length;
-                        // Aplicar formato solo si hay headers
-                        await this.formatSheetHeaders(sheetName, numColumns);
-                    }
-                } catch (e) {
-                    // Si no hay headers o hay error, continuar con la siguiente hoja
-                    console.warn(`⚠️ No se pudo formatear ${sheetName}:`, e.message);
-                }
-            }
-        } catch (error) {
-            console.warn('⚠️ Error verificando formato de hojas:', error);
-        }
+        // Deshabilitado para evitar rate limiting
+        // El formato se aplica automáticamente al crear hojas nuevas
+        return;
     },
 
     async updateIndexSheet() {
@@ -1710,15 +1767,13 @@ const SyncManager = {
                 ['CASH_MOVEMENTS', 'Movimientos de caja']
             ];
 
-            // Obtener todas las hojas del spreadsheet
-            const response = await gapi.client.sheets.spreadsheets.get({
-                spreadsheetId: this.spreadsheetId
-            });
-            const allSheets = response.result.sheets;
+            // Obtener todas las hojas del spreadsheet usando cache
+            const allSheets = await this.getSheetsList();
 
-            // Calcular conteos
+            // Calcular conteos (con rate limiting y delays)
             const counts = [];
-            for (const info of sheetsInfo) {
+            for (let i = 0; i < sheetsInfo.length; i++) {
+                const info = sheetsInfo[i];
                 const sheetName = info[0];
                 let totalCount = 0;
 
@@ -1726,53 +1781,72 @@ const SyncManager = {
                 const mainSheet = allSheets.find(s => s.properties.title === sheetName);
                 if (mainSheet) {
                     try {
-                        const data = await gapi.client.sheets.spreadsheets.values.get({
-                            spreadsheetId: this.spreadsheetId,
-                            range: `${sheetName}!A:Z`
-                        });
+                        const data = await this.rateLimitedRequest(() =>
+                            gapi.client.sheets.spreadsheets.values.get({
+                                spreadsheetId: this.spreadsheetId,
+                                range: `${sheetName}!A:Z`
+                            })
+                        );
                         if (data.result.values && data.result.values.length > 1) {
                             totalCount += data.result.values.length - 1; // -1 por header
                         }
                     } catch (e) {
                         // Hoja vacía o error, continuar
+                        if (e.status !== 429) {
+                            console.warn(`Error contando ${sheetName}:`, e.message);
+                        }
                     }
                 }
 
-                // Contar en hojas por sucursal (simplificado por ahora)
+                // Contar en hojas por sucursal (con delay para evitar rate limiting)
                 const branchPrefix = sheetName + this.MULTI_BRANCH_CONFIG.BRANCH_SHEET_SUFFIX;
                 for (const sheet of allSheets) {
                     const sheetTitle = sheet.properties.title;
                     if (sheetTitle.startsWith(branchPrefix)) {
                         try {
-                            const data = await gapi.client.sheets.spreadsheets.values.get({
-                                spreadsheetId: this.spreadsheetId,
-                                range: `${sheetTitle}!A:Z`
-                            });
+                            // Delay adicional para hojas por sucursal
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                            const data = await this.rateLimitedRequest(() =>
+                                gapi.client.sheets.spreadsheets.values.get({
+                                    spreadsheetId: this.spreadsheetId,
+                                    range: `${sheetTitle}!A:Z`
+                                })
+                            );
                             if (data.result.values && data.result.values.length > 1) {
                                 totalCount += data.result.values.length - 1;
                             }
                         } catch (e) {
-                            // Ignorar errores
+                            // Ignorar errores (especialmente 429)
+                            if (e.status !== 429) {
+                                console.warn(`Error contando ${sheetTitle}:`, e.message);
+                            }
                         }
                     }
                 }
 
                 counts.push(totalCount);
+                
+                // Delay entre hojas para evitar rate limiting
+                if (i < sheetsInfo.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 150));
+                }
             }
 
-            // Actualizar valores en columna C (índice 2)
+            // Actualizar valores en columna C (índice 2) - solo si hay cambios
             const updates = sheetsInfo.map((info, index) => ({
                 range: `${indexSheetName}!C${6 + index}`,
                 values: [[counts[index]]]
             }));
 
-            await gapi.client.sheets.spreadsheets.values.batchUpdate({
-                spreadsheetId: this.spreadsheetId,
-                resource: {
-                    valueInputOption: 'RAW',
-                    data: updates
-                }
-            });
+            await this.rateLimitedRequest(() =>
+                gapi.client.sheets.spreadsheets.values.batchUpdate({
+                    spreadsheetId: this.spreadsheetId,
+                    resource: {
+                        valueInputOption: 'RAW',
+                        data: updates
+                    }
+                })
+            );
         } catch (error) {
             console.warn('⚠️ Error actualizando índice (no crítico):', error);
         }
@@ -1785,10 +1859,12 @@ const SyncManager = {
         // Verificar si la hoja principal tiene headers
         let sheetInfo;
         try {
-            sheetInfo = await gapi.client.sheets.spreadsheets.values.get({
-                spreadsheetId: this.spreadsheetId,
-                range: `${baseSheetName}!A1:Z1`
-            });
+            sheetInfo = await this.rateLimitedRequest(() =>
+                gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${baseSheetName}!A1:Z1`
+                })
+            );
         } catch (e) {
             sheetInfo = { result: { values: null } };
         }
@@ -1797,22 +1873,26 @@ const SyncManager = {
         
         if (!sheetInfo.result.values || sheetInfo.result.values.length === 0 || !sheetInfo.result.values[0] || sheetInfo.result.values[0].length === 0) {
             if (headers.length > 0) {
-                await gapi.client.sheets.spreadsheets.values.update({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `${baseSheetName}!A1`,
-                    valueInputOption: 'RAW',
-                    resource: {
-                        values: [headers]
-                    }
-                });
+                await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.update({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `${baseSheetName}!A1`,
+                        valueInputOption: 'RAW',
+                        resource: {
+                            values: [headers]
+                        }
+                    })
+                );
             }
             startRow = 2;
         } else {
             try {
-                const allData = await gapi.client.sheets.spreadsheets.values.get({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `${baseSheetName}!A:Z`
-                });
+                const allData = await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.get({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `${baseSheetName}!A:Z`
+                    })
+                );
                 startRow = (allData.result.values?.length || 1) + 1;
             } catch (e) {
                 startRow = 2;
@@ -1824,15 +1904,17 @@ const SyncManager = {
         } else if (records.length > 0) {
             const rows = records.map(record => this.convertRecordToRow(entityType, record));
             
-            await gapi.client.sheets.spreadsheets.values.append({
-                spreadsheetId: this.spreadsheetId,
-                range: `${baseSheetName}!A${startRow}`,
-                valueInputOption: 'RAW',
-                insertDataOption: 'INSERT_ROWS',
-                resource: {
-                    values: rows
-                }
-            });
+            await this.rateLimitedRequest(() =>
+                gapi.client.sheets.spreadsheets.values.append({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${baseSheetName}!A${startRow}`,
+                    valueInputOption: 'RAW',
+                    insertDataOption: 'INSERT_ROWS',
+                    resource: {
+                        values: rows
+                    }
+                })
+            );
         }
     },
 
@@ -1844,10 +1926,12 @@ const SyncManager = {
             
             // Buscar si ya existe esta venta (por folio)
             try {
-                const existingData = await gapi.client.sheets.spreadsheets.values.get({
-                    spreadsheetId: this.spreadsheetId,
-                    range: 'SALES!B:B'
-                });
+                const existingData = await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.get({
+                        spreadsheetId: this.spreadsheetId,
+                        range: 'SALES!B:B'
+                    })
+                );
                 
                 let existingRow = null;
                 if (existingData.result.values) {
@@ -1861,17 +1945,34 @@ const SyncManager = {
                 
                 if (existingRow) {
                     // Actualizar venta existente
-                    await gapi.client.sheets.spreadsheets.values.update({
-                        spreadsheetId: this.spreadsheetId,
-                        range: `SALES!A${existingRow}`,
-                        valueInputOption: 'RAW',
-                        resource: {
-                            values: [saleRow]
-                        }
-                    });
+                    await this.rateLimitedRequest(() =>
+                        gapi.client.sheets.spreadsheets.values.update({
+                            spreadsheetId: this.spreadsheetId,
+                            range: `SALES!A${existingRow}`,
+                            valueInputOption: 'RAW',
+                            resource: {
+                                values: [saleRow]
+                            }
+                        })
+                    );
                 } else {
                     // Agregar nueva venta
-                    await gapi.client.sheets.spreadsheets.values.append({
+                    await this.rateLimitedRequest(() =>
+                        gapi.client.sheets.spreadsheets.values.append({
+                            spreadsheetId: this.spreadsheetId,
+                            range: `SALES!A${startRow + i}`,
+                            valueInputOption: 'RAW',
+                            insertDataOption: 'INSERT_ROWS',
+                            resource: {
+                                values: [saleRow]
+                            }
+                        })
+                    );
+                }
+            } catch (e) {
+                console.warn('Error buscando venta existente, agregando como nueva:', e);
+                await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.append({
                         spreadsheetId: this.spreadsheetId,
                         range: `SALES!A${startRow + i}`,
                         valueInputOption: 'RAW',
@@ -1879,19 +1980,8 @@ const SyncManager = {
                         resource: {
                             values: [saleRow]
                         }
-                    });
-                }
-            } catch (e) {
-                console.warn('Error buscando venta existente, agregando como nueva:', e);
-                await gapi.client.sheets.spreadsheets.values.append({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `SALES!A${startRow + i}`,
-                    valueInputOption: 'RAW',
-                    insertDataOption: 'INSERT_ROWS',
-                    resource: {
-                        values: [saleRow]
-                    }
-                });
+                    })
+                );
             }
             
             // Escribir items si existen
@@ -1910,21 +2000,25 @@ const SyncManager = {
                     item.created_at || ''
                 ]);
                 
-                const itemsData = await gapi.client.sheets.spreadsheets.values.get({
-                    spreadsheetId: this.spreadsheetId,
-                    range: 'ITEMS!A:Z'
-                });
+                const itemsData = await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.get({
+                        spreadsheetId: this.spreadsheetId,
+                        range: 'ITEMS!A:Z'
+                    })
+                );
                 const itemsStartRow = (itemsData.result.values?.length || 1) + 1;
                 
-                await gapi.client.sheets.spreadsheets.values.append({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `ITEMS!A${itemsStartRow}`,
-                    valueInputOption: 'RAW',
-                    insertDataOption: 'INSERT_ROWS',
-                    resource: {
-                        values: itemsRows
-                    }
-                });
+                await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.append({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `ITEMS!A${itemsStartRow}`,
+                        valueInputOption: 'RAW',
+                        insertDataOption: 'INSERT_ROWS',
+                        resource: {
+                            values: itemsRows
+                        }
+                    })
+                );
             }
             
             // Escribir payments si existen
@@ -1942,21 +2036,25 @@ const SyncManager = {
                     payment.created_at || ''
                 ]);
                 
-                const paymentsData = await gapi.client.sheets.spreadsheets.values.get({
-                    spreadsheetId: this.spreadsheetId,
-                    range: 'PAYMENTS!A:Z'
-                });
+                const paymentsData = await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.get({
+                        spreadsheetId: this.spreadsheetId,
+                        range: 'PAYMENTS!A:Z'
+                    })
+                );
                 const paymentsStartRow = (paymentsData.result.values?.length || 1) + 1;
                 
-                await gapi.client.sheets.spreadsheets.values.append({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `PAYMENTS!A${paymentsStartRow}`,
-                    valueInputOption: 'RAW',
-                    insertDataOption: 'INSERT_ROWS',
-                    resource: {
-                        values: paymentsRows
-                    }
-                });
+                await this.rateLimitedRequest(() =>
+                    gapi.client.sheets.spreadsheets.values.append({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `PAYMENTS!A${paymentsStartRow}`,
+                        valueInputOption: 'RAW',
+                        insertDataOption: 'INSERT_ROWS',
+                        resource: {
+                            values: paymentsRows
+                        }
+                    })
+                );
             }
         }
     },
