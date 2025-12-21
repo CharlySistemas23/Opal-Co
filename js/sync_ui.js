@@ -875,6 +875,97 @@ const SyncUI = {
         }
     },
 
+    async deleteQueueItem(itemId) {
+        try {
+            if (!await Utils.confirm('¿Eliminar este elemento de la cola de sincronización?')) {
+                return;
+            }
+
+            const item = await DB.get('sync_queue', itemId);
+            if (!item) {
+                Utils.showNotification('Elemento no encontrado', 'error');
+                return;
+            }
+
+            await DB.delete('sync_queue', itemId);
+            Utils.showNotification('Elemento eliminado de la cola', 'success');
+            
+            // Recargar la pestaña actual
+            await this.loadTab('queue');
+        } catch (e) {
+            console.error('Error eliminando elemento de la cola:', e);
+            Utils.showNotification('Error al eliminar elemento', 'error');
+        }
+    },
+
+    async clearFailedItems() {
+        try {
+            if (!await Utils.confirm('¿Eliminar todos los elementos fallidos de la cola?')) {
+                return;
+            }
+
+            const allItems = await DB.getAll('sync_queue') || [];
+            const failedItems = allItems.filter(item => item.status === 'failed');
+            
+            for (const item of failedItems) {
+                await DB.delete('sync_queue', item.id);
+            }
+
+            Utils.showNotification(`${failedItems.length} elementos fallidos eliminados`, 'success');
+            await this.loadTab('queue');
+        } catch (e) {
+            console.error('Error eliminando elementos fallidos:', e);
+            Utils.showNotification('Error al eliminar elementos fallidos', 'error');
+        }
+    },
+
+    async exportQueue() {
+        try {
+            const allItems = await DB.getAll('sync_queue') || [];
+            
+            if (allItems.length === 0) {
+                Utils.showNotification('No hay elementos en la cola para exportar', 'info');
+                return;
+            }
+
+            // Convertir a CSV
+            const headers = ['ID', 'Tipo', 'ID Entidad', 'Acción', 'Estado', 'Reintentos', 'Último Intento', 'Creado', 'Error'];
+            const rows = allItems.map(item => [
+                item.id,
+                item.entity_type || '',
+                item.entity_id || '',
+                item.action || 'upsert',
+                item.status || 'pending',
+                item.retries || 0,
+                item.last_attempt || '',
+                item.created_at || '',
+                item.error || ''
+            ]);
+
+            const csvContent = [
+                headers.join(','),
+                ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+            ].join('\n');
+
+            // Crear y descargar archivo
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', `sync_queue_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            Utils.showNotification(`Cola exportada: ${allItems.length} elementos`, 'success');
+        } catch (e) {
+            console.error('Error exportando cola:', e);
+            Utils.showNotification('Error al exportar cola', 'error');
+        }
+    },
+
     async loadSyncStatus() {
         await this.loadTab('overview');
     }
