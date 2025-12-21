@@ -398,12 +398,14 @@ const SyncUI = {
             settings = {
                 autoSync: 'disabled',
                 batchSize: 50,
-                timeout: 30,
+                timeout: 60,
                 compress: false,
                 retryFailed: true,
                 notifyErrors: true,
                 maxRetries: 5,
-                entityFilters: {}
+                entityFilters: {},
+                googleClientId: '',
+                spreadsheetId: ''
             };
         }
         
@@ -433,6 +435,36 @@ const SyncUI = {
                     </div>
                     <button class="btn-primary btn-sm" onclick="window.SyncManager.saveSyncSettings()" style="width: 100%; margin-top: var(--spacing-xs);">
                         Guardar Configuración
+                    </button>
+                </div>
+
+                <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+                    <h3 style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--spacing-sm);">
+                        <i class="fas fa-cog"></i> Configuración de Google Sheets API
+                    </h3>
+                    <div class="form-group">
+                        <label>Google Client ID</label>
+                        <input type="text" id="google-client-id" class="form-input" 
+                               placeholder="363340186026-xxxxx.apps.googleusercontent.com"
+                               value="${settings.googleClientId || ''}">
+                        <small style="color: var(--color-text-secondary); font-size: 10px;">
+                            ID de cliente OAuth obtenido de Google Cloud Console
+                        </small>
+                    </div>
+                    <div class="form-group">
+                        <label>Spreadsheet ID</label>
+                        <input type="text" id="google-spreadsheet-id" class="form-input" 
+                               placeholder="1awlhCklyVlnYxhC3i6wMYhgDE..."
+                               value="${settings.spreadsheetId || ''}">
+                        <small style="color: var(--color-text-secondary); font-size: 10px;">
+                            ID del spreadsheet de Google Sheets (de la URL del documento)
+                        </small>
+                    </div>
+                    <button class="btn-secondary btn-sm" onclick="SyncManager.testGoogleAuth()" style="width: 100%; margin-top: var(--spacing-xs);">
+                        <i class="fas fa-key"></i> Probar Autenticación
+                    </button>
+                    <button class="btn-primary btn-sm" onclick="window.SyncManager.saveSyncSettings()" style="width: 100%; margin-top: var(--spacing-xs);">
+                        Guardar Configuración Google
                     </button>
                 </div>
 
