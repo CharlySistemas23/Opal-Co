@@ -278,88 +278,103 @@ const SyncManager = {
             let errorCount = 0;
 
             for (const [entityType, items] of Object.entries(grouped)) {
-                try {
-                    console.log(`📦 Procesando ${items.length} items de tipo ${entityType}...`);
+                // Dividir items de este tipo en lotes más pequeños para evitar timeouts
+                const itemsBatches = [];
+                for (let i = 0; i < items.length; i += batchSize) {
+                    itemsBatches.push(items.slice(i, i + batchSize));
+                }
+                
+                console.log(`📦 Procesando ${items.length} items de tipo ${entityType} en ${itemsBatches.length} lote(s)...`);
+                
+                // Procesar cada lote por separado
+                for (let batchIdx = 0; batchIdx < itemsBatches.length; batchIdx++) {
+                    const itemsBatch = itemsBatches[batchIdx];
                     
-                    // Separar items por acción (upsert vs delete)
-                    const upsertItems = items.filter(i => !i.action || i.action === 'upsert');
-                    const deleteItems = items.filter(i => i.action === 'delete');
-                    
-                    console.log(`  - Upserts: ${upsertItems.length}, Deletes: ${deleteItems.length}`);
-                    
-                    // Preparar records para upsert
-                    const records = await this.prepareRecords(entityType, upsertItems.map(i => i.entity_id), 'upsert');
-                    console.log(`  - Records preparados: ${records.length}`);
-                    
-                    // Preparar records para delete (obtener metadata de items eliminados)
-                    const deleteRecords = await this.prepareRecords(entityType, deleteItems.map(i => i.entity_id), 'delete');
-                    console.log(`  - Delete records preparados: ${deleteRecords.length}`);
-                    
-                    // Combinar records
-                    const allRecords = [...records, ...deleteRecords];
-                    
-                    console.log(`📤 Enviando ${allRecords.length} registros a Google Sheets...`);
-                    const result = await this.sendToSheets(entityType, allRecords, items);
-                    
-                    if (result.success) {
-                        console.log(`✅ ${entityType} sincronizado exitosamente`);
+                    try {
+                        console.log(`  📦 Lote ${batchIdx + 1}/${itemsBatches.length}: ${itemsBatch.length} items`);
                         
-                        // Mark as synced solo si realmente se enviaron datos Y se verificó la respuesta
-                        if (allRecords.length > 0) {
-                            for (const item of items) {
-                                await DB.put('sync_queue', {
-                                    ...item,
-                                    status: 'synced',
-                                    last_attempt: new Date().toISOString()
-                                });
-                                
-                                // Si fue una eliminación, limpiar el store de eliminados después de sincronizar
-                                if (item.action === 'delete') {
-                                    try {
-                                        await DB.delete('sync_deleted_items', item.entity_id);
-                                    } catch (e) {
-                                        console.warn('Error limpiando sync_deleted_items:', e);
+                        // Separar items por acción (upsert vs delete)
+                        const upsertItems = itemsBatch.filter(i => !i.action || i.action === 'upsert');
+                        const deleteItems = itemsBatch.filter(i => i.action === 'delete');
+                        
+                        console.log(`    - Upserts: ${upsertItems.length}, Deletes: ${deleteItems.length}`);
+                        
+                        // Preparar records para upsert
+                        const records = await this.prepareRecords(entityType, upsertItems.map(i => i.entity_id), 'upsert');
+                        console.log(`    - Records preparados: ${records.length}`);
+                        
+                        // Preparar records para delete (obtener metadata de items eliminados)
+                        const deleteRecords = await this.prepareRecords(entityType, deleteItems.map(i => i.entity_id), 'delete');
+                        console.log(`    - Delete records preparados: ${deleteRecords.length}`);
+                        
+                        // Combinar records
+                        const allRecords = [...records, ...deleteRecords];
+                        
+                        console.log(`📤 Enviando ${allRecords.length} registros a Google Sheets...`);
+                        const result = await this.sendToSheets(entityType, allRecords, itemsBatch);
+                    
+                        if (result.success) {
+                            console.log(`✅ ${entityType} lote ${batchIdx + 1}/${itemsBatches.length} sincronizado exitosamente`);
+                            
+                            // Mark as synced solo si realmente se enviaron datos Y se verificó la respuesta
+                            if (allRecords.length > 0) {
+                                for (const item of itemsBatch) {
+                                    await DB.put('sync_queue', {
+                                        ...item,
+                                        status: 'synced',
+                                        last_attempt: new Date().toISOString()
+                                    });
+                                    
+                                    // Si fue una eliminación, limpiar el store de eliminados después de sincronizar
+                                    if (item.action === 'delete') {
+                                        try {
+                                            await DB.delete('sync_deleted_items', item.entity_id);
+                                        } catch (e) {
+                                            console.warn('Error limpiando sync_deleted_items:', e);
+                                        }
                                     }
                                 }
+                                successCount += itemsBatch.length;
+                                const deleteCount = deleteItems.length;
+                                const logMessage = deleteCount > 0 
+                                    ? `Sincronizado: ${upsertItems.length} ${entityType}, ${deleteCount} eliminado(s)`
+                                    : `Sincronizado: ${itemsBatch.length} ${entityType}`;
+                                await this.addLog('success', logMessage, 'synced', Date.now() - startTime);
+                            } else {
+                                console.warn(`⚠️ No se enviaron registros para ${entityType} lote ${batchIdx + 1} - no marcando como sincronizado`);
+                                throw new Error(`No se prepararon registros para ${entityType}`);
                             }
-                            successCount += items.length;
-                            const deleteCount = deleteItems.length;
-                            const logMessage = deleteCount > 0 
-                                ? `Sincronizado: ${upsertItems.length} ${entityType}, ${deleteCount} eliminado(s)`
-                                : `Sincronizado: ${items.length} ${entityType}`;
-                            await this.addLog('success', logMessage, 'synced', Date.now() - startTime);
                         } else {
-                            console.warn(`⚠️ No se enviaron registros para ${entityType} - no marcando como sincronizado`);
-                            throw new Error(`No se prepararon registros para ${entityType}`);
+                            // Si hay error de CORS, mostrar mensaje específico y NO marcar como sincronizado
+                            if (result.corsBlocked) {
+                                console.error(`❌ ERROR CORS para ${entityType} lote ${batchIdx + 1}:`, result.error);
+                                Utils.showNotification(
+                                    `❌ ERROR CORS: ${result.error}. Los datos NO se enviaron.`, 
+                                    'error'
+                                );
+                            } else {
+                                console.error(`❌ Error sincronizando ${entityType} lote ${batchIdx + 1}:`, result.error);
+                            }
+                            throw new Error(result.error || 'Error desconocido');
                         }
-                    } else {
-                        // Si hay error de CORS, mostrar mensaje específico y NO marcar como sincronizado
-                        if (result.corsBlocked) {
-                            console.error(`❌ ERROR CORS para ${entityType}:`, result.error);
-                            Utils.showNotification(
-                                `❌ ERROR CORS: ${result.error}. Los datos NO se enviaron.`, 
-                                'error'
-                            );
-                        } else {
-                            console.error(`❌ Error sincronizando ${entityType}:`, result.error);
+                    } catch (e) {
+                        console.error(`❌ Error completo sincronizando ${entityType} lote ${batchIdx + 1}:`, e);
+                        console.error('Stack:', e.stack);
+                        await this.addLog('error', `Error sincronizando ${entityType} (lote ${batchIdx + 1}): ${e.message}`, 'failed');
+                        // Increment retries solo para este lote
+                        for (const item of itemsBatch) {
+                            const newRetries = (item.retries || 0) + 1;
+                            await DB.put('sync_queue', {
+                                ...item,
+                                retries: newRetries,
+                                last_attempt: new Date().toISOString(),
+                                status: newRetries >= maxRetries ? 'failed' : 'pending'
+                            });
                         }
-                        throw new Error(result.error || 'Error desconocido');
+                        errorCount += itemsBatch.length;
+                        // Continuar con el siguiente lote en lugar de detenerse completamente
+                        console.log(`⚠️ Continuando con el siguiente lote de ${entityType}...`);
                     }
-                } catch (e) {
-                    console.error(`❌ Error completo sincronizando ${entityType}:`, e);
-                    console.error('Stack:', e.stack);
-                    await this.addLog('error', `Error sincronizando ${entityType}: ${e.message}`, 'failed');
-                    // Increment retries
-                    for (const item of items) {
-                        const newRetries = (item.retries || 0) + 1;
-                        await DB.put('sync_queue', {
-                            ...item,
-                            retries: newRetries,
-                            last_attempt: new Date().toISOString(),
-                            status: newRetries >= maxRetries ? 'failed' : 'pending'
-                        });
-                    }
-                    errorCount += items.length;
                 }
             }
 
@@ -547,7 +562,9 @@ const SyncManager = {
         }
 
         const settings = await this.getSyncSettings();
-        const timeout = (settings.timeout || 30) * 1000;
+        // Timeout base: mínimo 60 segundos para dar tiempo suficiente a Google Apps Script
+        const baseTimeoutSeconds = parseInt(settings.timeout) || 60;
+        const baseTimeout = baseTimeoutSeconds * 1000; // Convertir a milisegundos
         
         // Separar records de eliminaciones y upserts
         const deleteRecords = records.filter(r => r._action === 'delete');
@@ -556,13 +573,14 @@ const SyncManager = {
         console.log(`📤 Enviando ${upsertRecords.length} registros y ${deleteRecords.length} eliminaciones de tipo ${entityType} a Google Sheets...`);
 
         // Calcular timeout dinámico basado en el tamaño del payload
-        // Mínimo 30 segundos, máximo 120 segundos
-        // Agregar 1 segundo por cada 10KB de datos
+        // Base: 60 segundos, máximo 180 segundos
+        // Agregar 2 segundos por cada 10KB de datos para dar más margen
         const payloadSize = JSON.stringify(upsertRecords).length;
-        const baseTimeout = timeout || 30000; // Convertir a milisegundos si viene en segundos
-        const dynamicTimeout = Math.min(Math.max(baseTimeout, 30000), 120000) + Math.floor(payloadSize / 10240);
+        const payloadKB = payloadSize / 1024;
+        const additionalTimeout = Math.floor(payloadSize / 5120) * 1000; // 2 segundos por cada 5KB
+        const dynamicTimeout = Math.min(baseTimeout + additionalTimeout, 180000); // Máximo 3 minutos
         
-        console.log(`⏱️ Timeout configurado: ${dynamicTimeout}ms para ${entityType} (payload: ${Math.round(payloadSize/1024)}KB)`);
+        console.log(`⏱️ Timeout configurado: ${Math.round(dynamicTimeout/1000)}s para ${entityType} (payload: ${Math.round(payloadKB)}KB, base: ${baseTimeoutSeconds}s)`);
 
         try {
             const controller = new AbortController();
@@ -875,7 +893,7 @@ const SyncManager = {
         return {
             autoSync: settingsMap.auto_sync || 'disabled',
             batchSize: parseInt(settingsMap.sync_batch_size || 50),
-            timeout: parseInt(settingsMap.sync_timeout || 30),
+            timeout: parseInt(settingsMap.sync_timeout || 60),
             compress: settingsMap.sync_compress === 'true',
             retryFailed: settingsMap.sync_retry_failed !== 'false',
             notifyErrors: settingsMap.sync_notify_errors !== 'false',
@@ -887,7 +905,7 @@ const SyncManager = {
     async saveSyncSettings() {
         const autoSync = document.getElementById('sync-auto-frequency')?.value || 'disabled';
         const batchSize = parseInt(document.getElementById('sync-batch-size')?.value || 50);
-        const timeout = parseInt(document.getElementById('sync-timeout')?.value || 30);
+        const timeout = parseInt(document.getElementById('sync-timeout')?.value || 60);
 
         await DB.put('settings', { key: 'auto_sync', value: autoSync, updated_at: new Date().toISOString() });
         await DB.put('settings', { key: 'sync_batch_size', value: batchSize, updated_at: new Date().toISOString() });
