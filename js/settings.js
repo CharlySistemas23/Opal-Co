@@ -5239,10 +5239,27 @@ const Settings = {
             
             for (let i = 0; i < 5; i++) {
                 try {
+                    const sku = `DEMO-${String(1000 + i)}`;
+                    const barcode = `DEMO${String(1000 + i).padStart(8, '0')}`;
+                    
+                    // Verificar si el SKU ya existe
+                    const existingBySku = await DB.query('inventory_items', 'sku', sku);
+                    if (existingBySku && existingBySku.length > 0) {
+                        console.log(`SKU ${sku} ya existe, omitiendo creación`);
+                        continue;
+                    }
+                    
+                    // Verificar si el barcode ya existe
+                    const existingByBarcode = await DB.query('inventory_items', 'barcode', barcode);
+                    if (existingByBarcode && existingByBarcode.length > 0) {
+                        console.log(`Barcode ${barcode} ya existe, omitiendo creación`);
+                        continue;
+                    }
+                    
                     const inventoryItem = {
                         id: Utils.generateId(),
-                        sku: `DEMO-${String(1000 + i)}`,
-                        barcode: `DEMO${String(1000 + i).padStart(8, '0')}`,
+                        sku: sku,
+                        barcode: barcode,
                         name: `${metals[i % metals.length]} con ${stones[i % stones.length]} - Demo ${i + 1}`,
                         metal: metals[i % metals.length],
                         stone: stones[i % stones.length],
