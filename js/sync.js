@@ -229,20 +229,36 @@ const SyncManager = {
             return;
         }
 
-        if (!this.syncUrl || !this.syncToken) {
-            Utils.showNotification('Configura la URL y token de sincronización', 'error');
+        // Verificar configuración de Google Sheets API
+        if (!this.googleClientId || !this.spreadsheetId) {
+            Utils.showNotification('Configura el Google Client ID y Spreadsheet ID en Configuración → Sincronización', 'error');
             console.error('❌ Sincronización no configurada:', {
-                hasUrl: !!this.syncUrl,
-                hasToken: !!this.syncToken
+                hasClientId: !!this.googleClientId,
+                hasSpreadsheetId: !!this.spreadsheetId
             });
             return;
         }
-
-        // Verificar que la URL sea válida
-        if (!this.syncUrl.includes('script.google.com')) {
-            Utils.showNotification('❌ URL de sincronización inválida. Debe ser una URL de Google Apps Script.', 'error');
-            console.error('❌ URL inválida:', this.syncUrl);
+        
+        // Asegurar autenticación
+        try {
+            await this.ensureAuthenticated();
+        } catch (authError) {
+            Utils.showNotification('Error de autenticación con Google: ' + authError.message, 'error');
             return;
+        }
+        
+        // Crear/actualizar índice al inicio de la sincronización
+        try {
+            await this.createIndexSheet();
+        } catch (indexError) {
+            console.warn('⚠️ Error creando índice (no crítico):', indexError);
+        }
+        
+        // Aplicar formato a todas las hojas existentes (si no lo tienen ya)
+        try {
+            await this.ensureAllSheetsFormatted();
+        } catch (formatError) {
+            console.warn('⚠️ Error aplicando formato a hojas (no crítico):', formatError);
         }
 
         if (this.isSyncing) {
@@ -1174,6 +1190,13 @@ const SyncManager = {
                 
                 console.log(`✅ ${upsertRecords.length} registros escritos en hojas de sucursal para ${entityType}`);
                 
+                // Actualizar índice después de escribir
+                try {
+                    await this.updateIndexSheet();
+                } catch (indexError) {
+                    console.warn('⚠️ Error actualizando índice (no crítico):', indexError);
+                }
+                
                 return { 
                     success: true, 
                     message: `${upsertRecords.length} registros de ${entityType} sincronizados exitosamente`,
@@ -1186,6 +1209,13 @@ const SyncManager = {
                 await this.writeRecordsToSheet(baseSheetName, baseSheetName, entityType, upsertRecords);
                 
                 console.log(`✅ ${upsertRecords.length} registros escritos en hoja ${baseSheetName}`);
+                
+                // Actualizar índice después de escribir
+                try {
+                    await this.updateIndexSheet();
+                } catch (indexError) {
+                    console.warn('⚠️ Error actualizando índice (no crítico):', indexError);
+                }
                 
                 return { 
                     success: true, 
@@ -1346,6 +1376,405 @@ const SyncManager = {
         } catch (error) {
             console.error('Error obteniendo sheet ID:', error);
             return null;
+        }
+    },
+
+    async createIndexSheet() {
+        // Crear o actualizar la hoja índice
+        try {
+            const indexSheetName = '📊 ÍNDICE';
+            
+            // Verificar si ya existe
+            let sheetExists = false;
+            try {
+                const response = await gapi.client.sheets.spreadsheets.get({
+                    spreadsheetId: this.spreadsheetId
+                });
+                sheetExists = response.result.sheets.some(s => s.properties.title === indexSheetName);
+            } catch (e) {
+                // No existe, continuar para crearla
+            }
+
+            const sheetsInfo = [
+                ['SALES', 'Ventas realizadas en el sistema POS'],
+                ['ITEMS', 'Detalle de productos vendidos en cada venta'],
+                ['PAYMENTS', 'Pagos realizados en cada venta (métodos, bancos, comisiones)'],
+                ['INVENTORY', 'Catálogo completo de productos en inventario'],
+                ['INVENTORY_LOG', 'Historial de movimientos de inventario'],
+                ['EMPLOYEES', 'Lista de empleados del sistema'],
+                ['USERS', 'Usuarios con acceso al sistema POS'],
+                ['REPAIRS', 'Registro de reparaciones realizadas'],
+                ['COSTS', 'Registro de costos fijos y variables'],
+                ['AUDIT_LOG', 'Log de auditoría de acciones del sistema'],
+                ['TOURIST_DAILY_REPORTS', 'Reportes diarios de ventas a turistas'],
+                ['ARRIVAL_RATE_RULES', 'Tabulador maestro de tarifas de llegadas por agencia'],
+                ['AGENCY_ARRIVALS', 'Registro de llegadas de pasajeros por agencia'],
+                ['DAILY_PROFIT_REPORTS', 'Reportes de utilidad diaria antes de impuestos'],
+                ['EXCHANGE_RATES_DAILY', 'Tipos de cambio diarios (USD, CAD)'],
+                ['INVENTORY_TRANSFERS', 'Transferencias de inventario entre sucursales'],
+                ['CATALOG_BRANCHES', 'Catálogo de sucursales (incluye datos empresariales por sucursal)'],
+                ['CATALOG_AGENCIES', 'Catálogo de agencias'],
+                ['CATALOG_SELLERS', 'Catálogo de vendedores'],
+                ['CATALOG_GUIDES', 'Catálogo de guías'],
+                ['CUSTOMERS', 'Catálogo de clientes'],
+                ['CASH_SESSIONS', 'Sesiones de caja'],
+                ['CASH_MOVEMENTS', 'Movimientos de caja']
+            ];
+
+            if (!sheetExists) {
+                // Crear la hoja
+                await gapi.client.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: this.spreadsheetId,
+                    resource: {
+                        requests: [{
+                            addSheet: {
+                                properties: {
+                                    title: indexSheetName,
+                                    index: 0 // Insertar al inicio
+                                }
+                            }
+                        }]
+                    }
+                });
+            }
+
+            // Crear los datos de la hoja
+            const values = [
+                ['OPAL & CO - SISTEMA POS'],
+                ['Panel de Control y Sincronización'],
+                [''], // Línea vacía
+                ['HOJAS DISPONIBLES'],
+                ['Hoja', 'Descripción', 'Total Registros'],
+                ...sheetsInfo.map(info => [info[0], info[1], 0]),
+                [''],
+                ['📌 NOTA:', 'Las hojas se actualizan automáticamente cuando se sincroniza el sistema POS.', '']
+            ];
+
+            // Escribir valores
+            await gapi.client.sheets.spreadsheets.values.update({
+                spreadsheetId: this.spreadsheetId,
+                range: `${indexSheetName}!A1`,
+                valueInputOption: 'RAW',
+                resource: { values }
+            });
+
+            // Aplicar formato
+            const indexSheetId = await this.getSheetId(indexSheetName);
+            if (indexSheetId) {
+                await gapi.client.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: this.spreadsheetId,
+                    resource: {
+                        requests: [
+                            // Formato título (fila 1)
+                            {
+                                repeatCell: {
+                                    range: {
+                                        sheetId: indexSheetId,
+                                        startRowIndex: 0,
+                                        endRowIndex: 1,
+                                        startColumnIndex: 0,
+                                        endColumnIndex: 3
+                                    },
+                                    cell: {
+                                        userEnteredFormat: {
+                                            textFormat: {
+                                                fontSize: 24,
+                                                bold: true,
+                                                foregroundColor: { red: 0.1, green: 0.1, blue: 0.1 }
+                                            },
+                                            horizontalAlignment: 'LEFT',
+                                            verticalAlignment: 'MIDDLE'
+                                        }
+                                    },
+                                    fields: 'userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment)'
+                                }
+                            },
+                            // Formato subtítulo (fila 2)
+                            {
+                                repeatCell: {
+                                    range: {
+                                        sheetId: indexSheetId,
+                                        startRowIndex: 1,
+                                        endRowIndex: 2,
+                                        startColumnIndex: 0,
+                                        endColumnIndex: 3
+                                    },
+                                    cell: {
+                                        userEnteredFormat: {
+                                            textFormat: {
+                                                fontSize: 14,
+                                                foregroundColor: { red: 0.42, green: 0.46, blue: 0.49 }
+                                            },
+                                            horizontalAlignment: 'LEFT'
+                                        }
+                                    },
+                                    fields: 'userEnteredFormat(textFormat,horizontalAlignment)'
+                                }
+                            },
+                            // Formato "HOJAS DISPONIBLES" (fila 4)
+                            {
+                                repeatCell: {
+                                    range: {
+                                        sheetId: indexSheetId,
+                                        startRowIndex: 3,
+                                        endRowIndex: 4,
+                                        startColumnIndex: 0,
+                                        endColumnIndex: 3
+                                    },
+                                    cell: {
+                                        userEnteredFormat: {
+                                            textFormat: {
+                                                fontSize: 16,
+                                                bold: true
+                                            }
+                                        }
+                                    },
+                                    fields: 'userEnteredFormat(textFormat)'
+                                }
+                            },
+                            // Formato headers tabla (fila 5)
+                            {
+                                repeatCell: {
+                                    range: {
+                                        sheetId: indexSheetId,
+                                        startRowIndex: 4,
+                                        endRowIndex: 5,
+                                        startColumnIndex: 0,
+                                        endColumnIndex: 3
+                                    },
+                                    cell: {
+                                        userEnteredFormat: {
+                                            backgroundColor: { red: 0.26, green: 0.52, blue: 0.96 },
+                                            textFormat: {
+                                                foregroundColor: { red: 1.0, green: 1.0, blue: 1.0 },
+                                                fontSize: 11,
+                                                bold: true
+                                            },
+                                            horizontalAlignment: 'CENTER'
+                                        }
+                                    },
+                                    fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
+                                }
+                            },
+                            // Formato filas de datos (alternado)
+                            ...sheetsInfo.map((info, index) => ({
+                                repeatCell: {
+                                    range: {
+                                        sheetId: indexSheetId,
+                                        startRowIndex: 5 + index,
+                                        endRowIndex: 6 + index,
+                                        startColumnIndex: 0,
+                                        endColumnIndex: 3
+                                    },
+                                    cell: {
+                                        userEnteredFormat: {
+                                            backgroundColor: index % 2 === 0 
+                                                ? { red: 0.97, green: 0.98, blue: 0.98 }
+                                                : { red: 1.0, green: 1.0, blue: 1.0 }
+                                        }
+                                    },
+                                    fields: 'userEnteredFormat(backgroundColor)'
+                                }
+                            })),
+                            // Congelar filas superiores
+                            {
+                                updateSheetProperties: {
+                                    properties: {
+                                        sheetId: indexSheetId,
+                                        gridProperties: {
+                                            frozenRowCount: 5
+                                        }
+                                    },
+                                    fields: 'gridProperties.frozenRowCount'
+                                }
+                            },
+                            // Ajustar anchos de columna
+                            {
+                                updateDimensionProperties: {
+                                    range: {
+                                        sheetId: indexSheetId,
+                                        dimension: 'COLUMNS',
+                                        startIndex: 0,
+                                        endIndex: 1
+                                    },
+                                    properties: {
+                                        pixelSize: 200
+                                    },
+                                    fields: 'pixelSize'
+                                }
+                            },
+                            {
+                                updateDimensionProperties: {
+                                    range: {
+                                        sheetId: indexSheetId,
+                                        dimension: 'COLUMNS',
+                                        startIndex: 1,
+                                        endIndex: 2
+                                    },
+                                    properties: {
+                                        pixelSize: 400
+                                    },
+                                    fields: 'pixelSize'
+                                }
+                            },
+                            {
+                                updateDimensionProperties: {
+                                    range: {
+                                        sheetId: indexSheetId,
+                                        dimension: 'COLUMNS',
+                                        startIndex: 2,
+                                        endIndex: 3
+                                    },
+                                    properties: {
+                                        pixelSize: 120
+                                    },
+                                    fields: 'pixelSize'
+                                }
+                            }
+                        ]
+                    }
+                });
+            }
+
+            // Actualizar conteos
+            await this.updateIndexSheet();
+        } catch (error) {
+            console.error('Error creando índice:', error);
+            throw error;
+        }
+    },
+
+    async ensureAllSheetsFormatted() {
+        // Aplicar formato a todas las hojas que no sean el índice
+        try {
+            const response = await gapi.client.sheets.spreadsheets.get({
+                spreadsheetId: this.spreadsheetId
+            });
+            const allSheets = response.result.sheets;
+            const indexSheetName = '📊 ÍNDICE';
+            
+            for (const sheet of allSheets) {
+                const sheetName = sheet.properties.title;
+                if (sheetName === indexSheetName) continue; // Saltar el índice
+                
+                // Verificar si tiene headers
+                try {
+                    const headersData = await gapi.client.sheets.spreadsheets.values.get({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `${sheetName}!A1:Z1`
+                    });
+                    
+                    if (headersData.result.values && headersData.result.values.length > 0 && headersData.result.values[0]) {
+                        const numColumns = headersData.result.values[0].length;
+                        // Aplicar formato solo si hay headers
+                        await this.formatSheetHeaders(sheetName, numColumns);
+                    }
+                } catch (e) {
+                    // Si no hay headers o hay error, continuar con la siguiente hoja
+                    console.warn(`⚠️ No se pudo formatear ${sheetName}:`, e.message);
+                }
+            }
+        } catch (error) {
+            console.warn('⚠️ Error verificando formato de hojas:', error);
+        }
+    },
+
+    async updateIndexSheet() {
+        // Actualizar los conteos en la hoja índice
+        try {
+            const indexSheetName = '📊 ÍNDICE';
+            
+            const sheetsInfo = [
+                ['SALES', 'Ventas realizadas en el sistema POS'],
+                ['ITEMS', 'Detalle de productos vendidos en cada venta'],
+                ['PAYMENTS', 'Pagos realizados en cada venta (métodos, bancos, comisiones)'],
+                ['INVENTORY', 'Catálogo completo de productos en inventario'],
+                ['INVENTORY_LOG', 'Historial de movimientos de inventario'],
+                ['EMPLOYEES', 'Lista de empleados del sistema'],
+                ['USERS', 'Usuarios con acceso al sistema POS'],
+                ['REPAIRS', 'Registro de reparaciones realizadas'],
+                ['COSTS', 'Registro de costos fijos y variables'],
+                ['AUDIT_LOG', 'Log de auditoría de acciones del sistema'],
+                ['TOURIST_DAILY_REPORTS', 'Reportes diarios de ventas a turistas'],
+                ['ARRIVAL_RATE_RULES', 'Tabulador maestro de tarifas de llegadas por agencia'],
+                ['AGENCY_ARRIVALS', 'Registro de llegadas de pasajeros por agencia'],
+                ['DAILY_PROFIT_REPORTS', 'Reportes de utilidad diaria antes de impuestos'],
+                ['EXCHANGE_RATES_DAILY', 'Tipos de cambio diarios (USD, CAD)'],
+                ['INVENTORY_TRANSFERS', 'Transferencias de inventario entre sucursales'],
+                ['CATALOG_BRANCHES', 'Catálogo de sucursales (incluye datos empresariales por sucursal)'],
+                ['CATALOG_AGENCIES', 'Catálogo de agencias'],
+                ['CATALOG_SELLERS', 'Catálogo de vendedores'],
+                ['CATALOG_GUIDES', 'Catálogo de guías'],
+                ['CUSTOMERS', 'Catálogo de clientes'],
+                ['CASH_SESSIONS', 'Sesiones de caja'],
+                ['CASH_MOVEMENTS', 'Movimientos de caja']
+            ];
+
+            // Obtener todas las hojas del spreadsheet
+            const response = await gapi.client.sheets.spreadsheets.get({
+                spreadsheetId: this.spreadsheetId
+            });
+            const allSheets = response.result.sheets;
+
+            // Calcular conteos
+            const counts = [];
+            for (const info of sheetsInfo) {
+                const sheetName = info[0];
+                let totalCount = 0;
+
+                // Contar en hoja principal
+                const mainSheet = allSheets.find(s => s.properties.title === sheetName);
+                if (mainSheet) {
+                    try {
+                        const data = await gapi.client.sheets.spreadsheets.values.get({
+                            spreadsheetId: this.spreadsheetId,
+                            range: `${sheetName}!A:Z`
+                        });
+                        if (data.result.values && data.result.values.length > 1) {
+                            totalCount += data.result.values.length - 1; // -1 por header
+                        }
+                    } catch (e) {
+                        // Hoja vacía o error, continuar
+                    }
+                }
+
+                // Contar en hojas por sucursal (simplificado por ahora)
+                const branchPrefix = sheetName + this.MULTI_BRANCH_CONFIG.BRANCH_SHEET_SUFFIX;
+                for (const sheet of allSheets) {
+                    const sheetTitle = sheet.properties.title;
+                    if (sheetTitle.startsWith(branchPrefix)) {
+                        try {
+                            const data = await gapi.client.sheets.spreadsheets.values.get({
+                                spreadsheetId: this.spreadsheetId,
+                                range: `${sheetTitle}!A:Z`
+                            });
+                            if (data.result.values && data.result.values.length > 1) {
+                                totalCount += data.result.values.length - 1;
+                            }
+                        } catch (e) {
+                            // Ignorar errores
+                        }
+                    }
+                }
+
+                counts.push(totalCount);
+            }
+
+            // Actualizar valores en columna C (índice 2)
+            const updates = sheetsInfo.map((info, index) => ({
+                range: `${indexSheetName}!C${6 + index}`,
+                values: [[counts[index]]]
+            }));
+
+            await gapi.client.sheets.spreadsheets.values.batchUpdate({
+                spreadsheetId: this.spreadsheetId,
+                resource: {
+                    valueInputOption: 'RAW',
+                    data: updates
+                }
+            });
+        } catch (error) {
+            console.warn('⚠️ Error actualizando índice (no crítico):', error);
         }
     },
     
