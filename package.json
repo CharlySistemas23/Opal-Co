@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Sistema POS Multisucursal Opal & Co",
   "scripts": {
-    "build": "echo 'No build needed for static site'"
+    "build": "node build.js"
   }
 }
 
