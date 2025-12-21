@@ -1704,14 +1704,24 @@ const Transfers = {
                 await DB.put('inventory_items', item);
 
                 // Registrar movimiento en log
+                const logId = Utils.generateId();
                 await DB.add('inventory_logs', {
-                    id: Utils.generateId(),
+                    id: logId,
                     item_id: item.id,
                     action: 'transferencia',
                     quantity: -ti.quantity,
                     notes: `Transferencia ${transfer.folio} a ${transfer.to_branch_id}`,
                     created_at: new Date().toISOString()
                 });
+                
+                // Agregar a cola de sincronización
+                if (typeof SyncManager !== 'undefined') {
+                    try {
+                        await SyncManager.addToQueue('inventory_log', logId);
+                    } catch (syncError) {
+                        console.error('Error agregando inventory_log a cola:', syncError);
+                    }
+                }
             }
 
             // Actualizar estado de transferencia
