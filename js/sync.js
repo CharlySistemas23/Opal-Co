@@ -154,12 +154,17 @@ const SyncManager = {
 
             let pending = await DB.query('sync_queue', 'status', 'pending');
             
+            console.log(`📋 Elementos pendientes en cola: ${pending.length}`);
+            
             // Aplicar filtros de entidad
             if (Object.keys(entityFilters).length > 0) {
+                const beforeFilter = pending.length;
                 pending = pending.filter(item => entityFilters[item.entity_type] !== false);
+                console.log(`🔍 Después de filtros: ${pending.length} (filtrados: ${beforeFilter - pending.length})`);
             }
             
             if (pending.length === 0) {
+                console.log('ℹ️ No hay elementos pendientes de sincronizar');
                 Utils.showNotification('No hay elementos pendientes de sincronizar', 'info');
                 this.isSyncing = false;
                 UI.updateSyncStatus(this.isOnline, false);
@@ -186,22 +191,30 @@ const SyncManager = {
 
             for (const [entityType, items] of Object.entries(grouped)) {
                 try {
+                    console.log(`📦 Procesando ${items.length} items de tipo ${entityType}...`);
+                    
                     // Separar items por acción (upsert vs delete)
                     const upsertItems = items.filter(i => !i.action || i.action === 'upsert');
                     const deleteItems = items.filter(i => i.action === 'delete');
                     
+                    console.log(`  - Upserts: ${upsertItems.length}, Deletes: ${deleteItems.length}`);
+                    
                     // Preparar records para upsert
                     const records = await this.prepareRecords(entityType, upsertItems.map(i => i.entity_id), 'upsert');
+                    console.log(`  - Records preparados: ${records.length}`);
                     
                     // Preparar records para delete (obtener metadata de items eliminados)
                     const deleteRecords = await this.prepareRecords(entityType, deleteItems.map(i => i.entity_id), 'delete');
+                    console.log(`  - Delete records preparados: ${deleteRecords.length}`);
                     
                     // Combinar records
                     const allRecords = [...records, ...deleteRecords];
                     
+                    console.log(`📤 Enviando ${allRecords.length} registros a Google Sheets...`);
                     const result = await this.sendToSheets(entityType, allRecords, items);
                     
                     if (result.success) {
+                        console.log(`✅ ${entityType} sincronizado exitosamente`);
                         // Mark as synced
                         for (const item of items) {
                             await DB.put('sync_queue', {
@@ -226,10 +239,12 @@ const SyncManager = {
                             : `Sincronizado: ${items.length} ${entityType}`;
                         await this.addLog('success', logMessage, 'synced', Date.now() - startTime);
                     } else {
+                        console.error(`❌ Error sincronizando ${entityType}:`, result.error);
                         throw new Error(result.error || 'Error desconocido');
                     }
                 } catch (e) {
-                    console.error(`Error syncing ${entityType}:`, e);
+                    console.error(`❌ Error completo sincronizando ${entityType}:`, e);
+                    console.error('Stack:', e.stack);
                     await this.addLog('error', `Error sincronizando ${entityType}: ${e.message}`, 'failed');
                     // Increment retries
                     for (const item of items) {
@@ -403,6 +418,8 @@ const SyncManager = {
         const deleteRecords = records.filter(r => r._action === 'delete');
         const upsertRecords = records.filter(r => !r._action || r._action !== 'delete');
 
+        console.log(`📤 Enviando ${upsertRecords.length} registros y ${deleteRecords.length} eliminaciones de tipo ${entityType} a Google Sheets...`);
+
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -421,28 +438,92 @@ const SyncManager = {
                 timestamp: new Date().toISOString()
             };
 
-            // Usar mode: 'no-cors' para Google Apps Script (no permite leer respuesta pero envía datos)
-            const response = await fetch(this.syncUrl, {
-                method: 'POST',
-                mode: 'no-cors', // Crítico para Google Apps Script
-                headers: {
-                    'Content-Type': 'text/plain;charset=utf-8'
-                },
-                body: JSON.stringify(payload),
-                redirect: 'follow',
-                signal: controller.signal
+            console.log('📦 Payload preparado:', {
+                entityType,
+                recordsCount: upsertRecords.length,
+                deletesCount: deleteRecords.length,
+                payloadSize: JSON.stringify(payload).length
             });
 
-            clearTimeout(timeoutId);
-
-            // Con mode: 'no-cors', response.type será 'opaque' y no podemos leer el contenido
-            // Pero si llegamos aquí sin error, la petición se envió
-            console.log('Petición enviada a Google Sheets (mode: no-cors), response type:', response.type);
+            // Intentar primero con CORS para poder leer la respuesta
+            let response;
+            let responseData = null;
             
-            // Asumimos éxito si no hubo error de red
-            return { success: true, message: 'Datos enviados a Google Sheets' };
+            try {
+                response = await fetch(this.syncUrl, {
+                    method: 'POST',
+                    mode: 'cors', // Cambiar a CORS para poder leer la respuesta
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload),
+                    redirect: 'follow',
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                // Intentar leer la respuesta
+                if (response.ok) {
+                    try {
+                        const text = await response.text();
+                        if (text) {
+                            responseData = JSON.parse(text);
+                            console.log('✅ Respuesta de Google Sheets:', responseData);
+                        }
+                    } catch (parseError) {
+                        console.warn('⚠️ No se pudo parsear la respuesta, pero la petición fue exitosa:', parseError);
+                    }
+                    
+                    if (responseData && responseData.success === false) {
+                        throw new Error(responseData.error || 'Error desconocido desde Google Sheets');
+                    }
+                    
+                    return { 
+                        success: true, 
+                        message: responseData?.message || 'Datos enviados a Google Sheets',
+                        data: responseData
+                    };
+                } else {
+                    const errorText = await response.text().catch(() => 'Error desconocido');
+                    throw new Error(`Error HTTP ${response.status}: ${errorText}`);
+                }
+            } catch (corsError) {
+                // Si falla CORS, intentar con no-cors como fallback
+                console.warn('⚠️ Error con CORS, intentando con no-cors:', corsError.message);
+                
+                clearTimeout(timeoutId);
+                const noCorsController = new AbortController();
+                const noCorsTimeoutId = setTimeout(() => noCorsController.abort(), timeout);
+                
+                try {
+                    response = await fetch(this.syncUrl, {
+                        method: 'POST',
+                        mode: 'no-cors', // Fallback: no-cors
+                        headers: {
+                            'Content-Type': 'text/plain;charset=utf-8'
+                        },
+                        body: JSON.stringify(payload),
+                        redirect: 'follow',
+                        signal: noCorsController.signal
+                    });
+
+                    clearTimeout(noCorsTimeoutId);
+                    console.log('📤 Petición enviada con no-cors (no se puede verificar respuesta)');
+                    
+                    // Con no-cors, asumimos éxito si no hay error de red
+                    return { 
+                        success: true, 
+                        message: 'Datos enviados a Google Sheets (modo no-cors, respuesta no verificable)',
+                        warning: 'No se pudo verificar la respuesta del servidor'
+                    };
+                } catch (noCorsError) {
+                    clearTimeout(noCorsTimeoutId);
+                    throw noCorsError;
+                }
+            }
         } catch (e) {
-            console.error('Error sending to sheets:', e);
+            console.error('❌ Error enviando a Google Sheets:', e);
             if (e.name === 'AbortError') {
                 return { success: false, error: 'Timeout: La sincronización tardó demasiado' };
             }
