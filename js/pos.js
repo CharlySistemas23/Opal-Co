@@ -1486,8 +1486,9 @@ Object.assign(POS, {
             await DB.put('inventory_items', updatedItem);
 
             // Log de inventario con información de stock
+            const logId = Utils.generateId();
             await DB.add('inventory_logs', {
-                id: Utils.generateId(),
+                id: logId,
                 item_id: item.id,
                 action: 'vendida',
                 quantity: item.quantity,
@@ -1497,6 +1498,15 @@ Object.assign(POS, {
                 notes: `Venta ${folio} - Cantidad: ${item.quantity}`,
                 created_at: new Date().toISOString()
             });
+            
+            // Agregar a cola de sincronización
+            if (typeof SyncManager !== 'undefined') {
+                try {
+                    await SyncManager.addToQueue('inventory_log', logId);
+                } catch (syncError) {
+                    console.error('Error agregando inventory_log a cola:', syncError);
+                }
+            }
 
             // Emitir evento de actualización de inventario
             if (typeof Utils !== 'undefined' && Utils.EventBus) {
@@ -1835,14 +1845,24 @@ Object.assign(POS, {
                 });
                 
                 // Log de apartado
+                const logId = Utils.generateId();
                 await DB.add('inventory_logs', {
-                    id: Utils.generateId(),
+                    id: logId,
                     item_id: item.id,
                     action: 'apartada',
                     quantity: 0,
                     notes: `Apartado ${folio}`,
                     created_at: new Date().toISOString()
                 });
+                
+                // Agregar a cola de sincronización
+                if (typeof SyncManager !== 'undefined') {
+                    try {
+                        await SyncManager.addToQueue('inventory_log', logId);
+                    } catch (syncError) {
+                        console.error('Error agregando inventory_log a cola:', syncError);
+                    }
+                }
             }
         }
 
