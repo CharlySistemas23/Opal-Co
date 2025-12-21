@@ -5634,7 +5634,7 @@ const Settings = {
     async clearMockData() {
         const confirmed = await Utils.confirm(
             '¿Limpiar todos los datos mock?',
-            'Esta acción eliminará TODOS los datos de prueba/demo del sistema EXCEPTO:\n\n✅ CONSERVADOS:\n- Usuarios y Empleados\n- Sucursales\n- Comisiones\n- Llegadas\n- Costos\n- Configuraciones\n\n❌ ELIMINADOS:\n- Inventario\n- Ventas\n- Clientes\n- Reparaciones\n- Reportes\n- Catálogos (agencies, guides, sellers)\n- Y todos los demás datos mock\n\n¿Estás seguro?',
+            'Esta acción eliminará TODOS los datos de prueba/demo del sistema EXCEPTO:\n\n✅ CONSERVADOS:\n- Usuarios y Empleados\n- Sucursales\n- Catálogos (Agencias, Guías, Vendedores)\n- Comisiones\n- Llegadas\n- Costos\n- Configuraciones (incluyendo tickets)\n- Códigos de Barras (historial)\n\n❌ ELIMINADOS:\n- Inventario\n- Ventas\n- Clientes\n- Reparaciones\n- Reportes\n- Y todos los demás datos mock\n\n¿Estás seguro?',
             'Limpiar Datos Mock',
             'Cancelar'
         );
@@ -5644,8 +5644,8 @@ const Settings = {
         try {
             Utils.showNotification('Limpiando datos mock...', 'info');
             
-            // Lista de stores a limpiar (EXCLUYENDO: users, employees, settings, device, audit_log, catalog_branches, commission_rules, agency_arrivals, cost_entries)
-            // IMPORTANTE: NUNCA incluir 'users', 'employees', 'catalog_branches', 'commission_rules', 'agency_arrivals', 'cost_entries' en esta lista
+            // Lista de stores a limpiar (EXCLUYENDO: users, employees, settings, device, audit_log, catalog_branches, commission_rules, agency_arrivals, cost_entries, catalog_agencies, catalog_guides, catalog_sellers, barcode_scan_history)
+            // IMPORTANTE: NUNCA incluir stores protegidos en esta lista
             const storesToClear = [
                 'inventory_items',
                 'inventory_photos',
@@ -5666,10 +5666,10 @@ const Settings = {
                 'tourist_report_lines',
                 'cash_sessions',
                 'cash_movements',
-                'barcode_scan_history',
-                'catalog_agencies',
-                'catalog_guides',
-                'catalog_sellers',
+                // 'barcode_scan_history', // NO ELIMINAR - Historial de códigos de barras es importante
+                // 'catalog_agencies', // NO ELIMINAR - Catálogos son datos importantes
+                // 'catalog_guides', // NO ELIMINAR - Catálogos son datos importantes
+                // 'catalog_sellers', // NO ELIMINAR - Catálogos son datos importantes
                 // 'catalog_branches', // NO ELIMINAR - Sucursales son datos reales
                 'payment_methods',
                 // 'commission_rules', // NO ELIMINAR - Comisiones son datos reales
@@ -5700,7 +5700,22 @@ const Settings = {
             }
 
             // VERIFICACIÓN DE SEGURIDAD: Nunca limpiar stores críticos
-            const protectedStores = ['users', 'employees', 'catalog_branches', 'commission_rules', 'agency_arrivals', 'cost_entries', 'settings', 'device', 'audit_log'];
+            // Incluye: usuarios, empleados, configuraciones, catálogos, códigos de barras, sucursales, comisiones, llegadas, costos
+            const protectedStores = [
+                'users', 
+                'employees', 
+                'catalog_branches', 
+                'catalog_agencies', 
+                'catalog_guides', 
+                'catalog_sellers',
+                'commission_rules', 
+                'agency_arrivals', 
+                'cost_entries', 
+                'settings', 
+                'device', 
+                'audit_log',
+                'barcode_scan_history'
+            ];
             
             // Verificar que ningún store protegido esté en la lista
             const protectedInList = storesToClear.filter(store => protectedStores.includes(store));
@@ -5734,15 +5749,20 @@ const Settings = {
                 }
             }
 
-            // Verificar que usuarios, empleados, sucursales, comisiones y llegadas siguen existiendo después de la limpieza
+            // Verificar que datos importantes siguen existiendo después de la limpieza
             const usersAfter = await DB.getAll('users') || [];
             const employeesAfter = await DB.getAll('employees') || [];
             const branchesAfter = await DB.getAll('catalog_branches') || [];
+            const agenciesAfter = await DB.getAll('catalog_agencies') || [];
+            const guidesAfter = await DB.getAll('catalog_guides') || [];
+            const sellersAfter = await DB.getAll('catalog_sellers') || [];
             const commissionsAfter = await DB.getAll('commission_rules') || [];
             const arrivalsAfter = await DB.getAll('agency_arrivals') || [];
             const costsAfter = await DB.getAll('cost_entries') || [];
+            const settingsAfter = await DB.getAll('settings') || [];
+            const barcodeHistoryAfter = await DB.getAll('barcode_scan_history') || [];
             
-            console.log(`✅ Verificación post-limpieza: ${usersAfter.length} usuarios, ${employeesAfter.length} empleados, ${branchesAfter.length} sucursales, ${commissionsAfter.length} comisiones, ${arrivalsAfter.length} llegadas, ${costsAfter.length} costos`);
+            console.log(`✅ Verificación post-limpieza: ${usersAfter.length} usuarios, ${employeesAfter.length} empleados, ${branchesAfter.length} sucursales, ${agenciesAfter.length} agencias, ${guidesAfter.length} guías, ${sellersAfter.length} vendedores, ${commissionsAfter.length} comisiones, ${arrivalsAfter.length} llegadas, ${costsAfter.length} costos, ${settingsAfter.length} configuraciones, ${barcodeHistoryAfter.length} registros de códigos de barras`);
             
             if (usersAfter.length === 0) {
                 console.error('❌ ERROR CRÍTICO: Todos los usuarios fueron eliminados!');
@@ -5752,6 +5772,16 @@ const Settings = {
             if (employeesAfter.length === 0) {
                 console.error('❌ ERROR CRÍTICO: Todos los empleados fueron eliminados!');
                 Utils.showNotification('ERROR: Se detectó que todos los empleados fueron eliminados. Esto no debería haber ocurrido.', 'error');
+            }
+            
+            // Verificar que catálogos y configuraciones no fueron eliminados
+            if (agenciesAfter.length === 0 || guidesAfter.length === 0 || sellersAfter.length === 0) {
+                console.warn('⚠️ ADVERTENCIA: Algunos catálogos están vacíos después de la limpieza');
+            }
+            
+            if (settingsAfter.length === 0) {
+                console.error('❌ ERROR CRÍTICO: Todas las configuraciones fueron eliminadas!');
+                Utils.showNotification('ERROR: Se detectó que todas las configuraciones fueron eliminadas. Esto no debería haber ocurrido.', 'error');
             }
             
             // Restaurar configuración básica si falta
@@ -5799,10 +5829,12 @@ const Settings = {
                             <li>Usuarios (users)</li>
                             <li>Empleados (employees)</li>
                             <li>Sucursales (catalog_branches)</li>
+                            <li>Catálogos: Agencias, Guías, Vendedores</li>
                             <li>Comisiones (commission_rules)</li>
                             <li>Llegadas (agency_arrivals)</li>
                             <li>Costos (cost_entries)</li>
-                            <li>Configuraciones (settings)</li>
+                            <li>Configuraciones (settings) - Incluye tickets</li>
+                            <li>Códigos de Barras (barcode_scan_history)</li>
                             <li>Información del dispositivo (device)</li>
                             <li>Logs de auditoría (audit_log)</li>
                         </ul>
