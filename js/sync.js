@@ -505,6 +505,15 @@ const SyncManager = {
                         case 'payment':
                             record = await DB.get('payments', id);
                             break;
+                        case 'inventory_log':
+                            record = await DB.get('inventory_logs', id);
+                            break;
+                        case 'audit_log':
+                            record = await DB.get('audit_log', id);
+                            break;
+                        case 'budget_entry':
+                            record = await DB.get('budget_entries', id);
+                            break;
                         default:
                             console.warn(`⚠️ Tipo de entidad desconocido en prepareRecords: ${entityType}`);
                             // Intentar obtener el record directamente por el nombre de la tabla
