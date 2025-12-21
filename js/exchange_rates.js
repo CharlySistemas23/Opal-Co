@@ -56,25 +56,26 @@ const ExchangeRates = {
             
             // Verificar si ya existe
             const existing = await DB.query('exchange_rates_daily', 'date', date);
+            let recordId;
+            
             if (existing && existing.length > 0) {
                 // Actualizar existente
-                await DB.put('exchange_rates_daily', {
-                    ...existing[0],
-                    usd: usd,
-                    cad: cad,
-                    updated_at: new Date().toISOString()
-                });
+                recordId = existing[0].id;
             } else {
-                // Crear nuevo
-                await DB.add('exchange_rates_daily', {
-                    id: Utils.generateId(),
-                    date: date,
-                    usd: usd,
-                    cad: cad,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                });
+                // Generar ID para nuevo registro
+                recordId = Utils.generateId();
             }
+            
+            // Usar put en lugar de add para evitar errores de unicidad
+            // put actualiza si existe o crea si no existe
+            await DB.put('exchange_rates_daily', {
+                id: recordId,
+                date: date,
+                usd: usd,
+                cad: cad,
+                created_at: existing && existing.length > 0 ? existing[0].created_at : new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            });
             
             // También actualizar settings para compatibilidad
             await DB.put('settings', { key: 'exchange_rate_usd', value: usd, updated_at: new Date().toISOString() });
