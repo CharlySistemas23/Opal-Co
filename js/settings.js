@@ -4248,7 +4248,14 @@ const Settings = {
     async testSyncConnection() {
         // Redirigir a la función de prueba de autenticación de Google
         if (SyncManager && SyncManager.testGoogleAuth) {
-            await SyncManager.testGoogleAuth();
+            try {
+                await SyncManager.testGoogleAuth();
+                // Actualizar el estado después de autenticarse
+                await this.loadSyncStatus();
+            } catch (error) {
+                // El error ya se muestra en testGoogleAuth
+                await this.loadSyncStatus();
+            }
         } else {
             Utils.showNotification('Configura el Google Client ID y Spreadsheet ID primero', 'error');
         }
@@ -4369,12 +4376,15 @@ const Settings = {
                         <span style="color: var(--color-warning);">No configurado</span>
                     </div>
                     <div style="font-size: 10px; color: var(--color-text-secondary);">
-                        Configura la URL y Token para sincronizar
+                        Configura el Google Client ID y Spreadsheet ID para sincronizar
                     </div>
                 `;
                 return;
             }
 
+            // Verificar si está autenticado con Google
+            const isAuthenticated = SyncManager && SyncManager.isAuthenticated;
+            
             // Buscar el último log de sincronización real (no de prueba)
             const syncLogs = await DB.getAll('sync_logs') || [];
             // Filtrar logs de sincronización real (que tengan status 'synced' o 'failed')
@@ -4383,29 +4393,67 @@ const Settings = {
             );
             const lastSync = realSyncLogs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
-            // Si no hay sincronizaciones reales, verificar si hay items pendientes
-            if (!lastSync) {
+            // Si está autenticado pero no hay logs, mostrar estado "Conectado"
+            if (isAuthenticated && !lastSync) {
                 const syncQueue = await DB.getAll('sync_queue') || [];
                 const pending = syncQueue.filter(item => item.status === 'pending');
                 
                 if (pending.length > 0) {
-            statusContainer.innerHTML = `
-                <div style="margin-bottom: var(--spacing-xs);">
-                    <strong>Estado:</strong> 
+                    statusContainer.innerHTML = `
+                        <div style="margin-bottom: var(--spacing-xs);">
+                            <strong>Estado:</strong> 
                             <span style="color: var(--color-warning);">Pendiente</span>
                         </div>
                         <div style="font-size: 10px; color: var(--color-text-secondary);">
                             ${pending.length} elemento(s) pendiente(s) de sincronizar
+                        </div>
+                        <div style="font-size: 10px; color: var(--color-success); margin-top: 4px;">
+                            <i class="fas fa-check-circle"></i> Autenticado con Google Sheets
                         </div>
                     `;
                 } else {
                     statusContainer.innerHTML = `
                         <div style="margin-bottom: var(--spacing-xs);">
                             <strong>Estado:</strong> 
-                            <span style="color: var(--color-success);">Listo</span>
+                            <span style="color: var(--color-success);">Conectado</span>
                         </div>
                         <div style="font-size: 10px; color: var(--color-text-secondary);">
                             Sin sincronizaciones previas
+                        </div>
+                        <div style="font-size: 10px; color: var(--color-success); margin-top: 4px;">
+                            <i class="fas fa-check-circle"></i> Autenticado con Google Sheets
+                        </div>
+                    `;
+                }
+                return;
+            }
+
+            // Si no está autenticado y no hay logs, mostrar "No autenticado"
+            if (!isAuthenticated && !lastSync) {
+                const syncQueue = await DB.getAll('sync_queue') || [];
+                const pending = syncQueue.filter(item => item.status === 'pending');
+                
+                if (pending.length > 0) {
+                    statusContainer.innerHTML = `
+                        <div style="margin-bottom: var(--spacing-xs);">
+                            <strong>Estado:</strong> 
+                            <span style="color: var(--color-warning);">Pendiente</span>
+                        </div>
+                        <div style="font-size: 10px; color: var(--color-text-secondary);">
+                            ${pending.length} elemento(s) pendiente(s) de sincronizar
+                        </div>
+                        <div style="font-size: 10px; color: var(--color-warning); margin-top: 4px;">
+                            <i class="fas fa-exclamation-triangle"></i> No autenticado - Haz clic en "Probar Autenticación"
+                        </div>
+                    `;
+                } else {
+                    statusContainer.innerHTML = `
+                        <div style="margin-bottom: var(--spacing-xs);">
+                            <strong>Estado:</strong> 
+                            <span style="color: var(--color-warning);">No autenticado</span>
+                        </div>
+                        <div style="font-size: 10px; color: var(--color-text-secondary);">
+                            Haz clic en "Probar Autenticación" para conectar
                         </div>
                     `;
                 }
@@ -4413,9 +4461,9 @@ const Settings = {
             }
 
             // Determinar estado basado en el último log
-            const isSuccess = lastSync.status === 'synced';
-            const statusText = isSuccess ? 'Sincronizado' : 'Error';
-            const statusColor = isSuccess ? 'var(--color-success)' : 'var(--color-danger)';
+            const isSuccess = lastSync && lastSync.status === 'synced';
+            const statusText = isSuccess ? 'Sincronizado' : (lastSync ? 'Error' : 'Listo');
+            const statusColor = isSuccess ? 'var(--color-success)' : (lastSync ? 'var(--color-danger)' : 'var(--color-success)');
 
             statusContainer.innerHTML = `
                 <div style="margin-bottom: var(--spacing-xs);">
@@ -4424,9 +4472,18 @@ const Settings = {
                         ${statusText}
                     </span>
                 </div>
-                    <div style="font-size: 10px; color: var(--color-text-secondary);">
-                        Última sincronización: ${Utils.formatDate(lastSync.created_at, 'DD/MM/YYYY HH:mm')}
+                <div style="font-size: 10px; color: var(--color-text-secondary);">
+                    ${lastSync ? `Última sincronización: ${Utils.formatDate(lastSync.created_at, 'DD/MM/YYYY HH:mm')}` : 'Sin sincronizaciones previas'}
+                </div>
+                ${isAuthenticated ? `
+                    <div style="font-size: 10px; color: var(--color-success); margin-top: 4px;">
+                        <i class="fas fa-check-circle"></i> Autenticado con Google Sheets
                     </div>
+                ` : `
+                    <div style="font-size: 10px; color: var(--color-warning); margin-top: 4px;">
+                        <i class="fas fa-exclamation-triangle"></i> No autenticado
+                    </div>
+                `}
             `;
         } catch (e) {
             console.error('Error loading sync status:', e);
