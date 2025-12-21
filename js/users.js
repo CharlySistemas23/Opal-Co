@@ -497,8 +497,9 @@ const UserManager = {
 
     async logAudit(action, entityType, entityId, details = {}) {
         try {
+            const auditId = Utils.generateId();
             await DB.add('audit_log', {
-                id: Utils.generateId(),
+                id: auditId,
                 user_id: this.currentUser?.id || 'system',
                 action: action,
                 entity_type: entityType,
@@ -506,6 +507,15 @@ const UserManager = {
                 details: details,
                 created_at: new Date().toISOString()
             });
+            
+            // Agregar a cola de sincronización
+            if (typeof SyncManager !== 'undefined') {
+                try {
+                    await SyncManager.addToQueue('audit_log', auditId);
+                } catch (syncError) {
+                    console.error('Error agregando audit_log a cola:', syncError);
+                }
+            }
         } catch (e) {
             console.error('Error logging audit:', e);
         }
