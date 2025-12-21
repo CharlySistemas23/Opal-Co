@@ -429,7 +429,7 @@ const SyncUI = {
                     </div>
                     <div class="form-group">
                         <label>Timeout (segundos)</label>
-                        <input type="number" id="sync-timeout" class="form-input" value="${settings.timeout || 30}" min="10" max="120">
+                        <input type="number" id="sync-timeout" class="form-input" value="${settings.timeout || 60}" min="30" max="180">
                     </div>
                     <button class="btn-primary btn-sm" onclick="window.SyncManager.saveSyncSettings()" style="width: 100%; margin-top: var(--spacing-xs);">
                         Guardar Configuración
