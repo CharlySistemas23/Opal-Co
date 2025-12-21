@@ -143,6 +143,17 @@ const SyncManager = {
 
         if (!this.syncUrl || !this.syncToken) {
             Utils.showNotification('Configura la URL y token de sincronización', 'error');
+            console.error('❌ Sincronización no configurada:', {
+                hasUrl: !!this.syncUrl,
+                hasToken: !!this.syncToken
+            });
+            return;
+        }
+
+        // Verificar que la URL sea válida
+        if (!this.syncUrl.includes('script.google.com')) {
+            Utils.showNotification('❌ URL de sincronización inválida. Debe ser una URL de Google Apps Script.', 'error');
+            console.error('❌ URL inválida:', this.syncUrl);
             return;
         }
 
@@ -291,19 +302,10 @@ const SyncManager = {
                     const result = await this.sendToSheets(entityType, allRecords, items);
                     
                     if (result.success) {
-                        // Si hay advertencia de CORS, mostrar advertencia pero no marcar como completamente exitoso
-                        if (result.corsBlocked) {
-                            console.warn(`⚠️ ${entityType} marcado como enviado pero CORS bloqueado - verificar en Google Sheets`);
-                            Utils.showNotification(
-                                `⚠️ ${entityType} enviado (CORS bloqueado - verifica en Google Sheets)`, 
-                                'warning'
-                            );
-                        } else {
-                            console.log(`✅ ${entityType} sincronizado exitosamente`);
-                        }
+                        console.log(`✅ ${entityType} sincronizado exitosamente`);
                         
-                        // Mark as synced solo si realmente se enviaron datos
-                        if (allRecords.length > 0 || result.corsBlocked) {
+                        // Mark as synced solo si realmente se enviaron datos Y se verificó la respuesta
+                        if (allRecords.length > 0) {
                             for (const item of items) {
                                 await DB.put('sync_queue', {
                                     ...item,
@@ -323,15 +325,24 @@ const SyncManager = {
                             successCount += items.length;
                             const deleteCount = deleteItems.length;
                             const logMessage = deleteCount > 0 
-                                ? `Sincronizado: ${upsertItems.length} ${entityType}, ${deleteCount} eliminado(s)${result.corsBlocked ? ' (CORS bloqueado)' : ''}`
-                                : `Sincronizado: ${items.length} ${entityType}${result.corsBlocked ? ' (CORS bloqueado)' : ''}`;
-                            await this.addLog('success', logMessage, result.corsBlocked ? 'warning' : 'synced', Date.now() - startTime);
+                                ? `Sincronizado: ${upsertItems.length} ${entityType}, ${deleteCount} eliminado(s)`
+                                : `Sincronizado: ${items.length} ${entityType}`;
+                            await this.addLog('success', logMessage, 'synced', Date.now() - startTime);
                         } else {
                             console.warn(`⚠️ No se enviaron registros para ${entityType} - no marcando como sincronizado`);
                             throw new Error(`No se prepararon registros para ${entityType}`);
                         }
                     } else {
-                        console.error(`❌ Error sincronizando ${entityType}:`, result.error);
+                        // Si hay error de CORS, mostrar mensaje específico y NO marcar como sincronizado
+                        if (result.corsBlocked) {
+                            console.error(`❌ ERROR CORS para ${entityType}:`, result.error);
+                            Utils.showNotification(
+                                `❌ ERROR CORS: ${result.error}. Los datos NO se enviaron.`, 
+                                'error'
+                            );
+                        } else {
+                            console.error(`❌ Error sincronizando ${entityType}:`, result.error);
+                        }
                         throw new Error(result.error || 'Error desconocido');
                     }
                 } catch (e) {
@@ -560,16 +571,18 @@ const SyncManager = {
                 payloadSize: JSON.stringify(payload).length
             });
 
-            // Intentar primero con CORS para poder leer la respuesta
+            // SOLUCIÓN: Usar text/plain para evitar preflight request
+            // Google Apps Script tiene problemas con preflight OPTIONS
+            // Usando text/plain hace que la petición sea "simple" y no requiere preflight
             let response;
             let responseData = null;
             
             try {
                 response = await fetch(this.syncUrl, {
                     method: 'POST',
-                    mode: 'cors', // Cambiar a CORS para poder leer la respuesta
+                    mode: 'cors',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'text/plain;charset=utf-8' // CRÍTICO: text/plain evita preflight
                     },
                     body: JSON.stringify(payload),
                     redirect: 'follow',
@@ -624,15 +637,16 @@ const SyncManager = {
                     });
 
                     clearTimeout(noCorsTimeoutId);
-                    console.log('📤 Petición enviada con no-cors (no se puede verificar respuesta)');
+                    console.error('❌ FALLO CRÍTICO: no-cors no es confiable para Google Apps Script');
                     
-                    // IMPORTANTE: Con no-cors, NO podemos verificar si realmente se envió
-                    // Mostrar advertencia pero marcar como "posiblemente exitoso"
+                    // CRÍTICO: no-cors NO funciona bien con Google Apps Script
+                    // Los datos probablemente NO se están enviando
+                    // NO marcar como exitoso - marcar como error para que se reintente
                     return { 
-                        success: true, 
-                        message: 'Datos enviados a Google Sheets (modo no-cors)',
-                        warning: '⚠️ ADVERTENCIA: No se pudo verificar la respuesta. Los datos pueden no haberse enviado correctamente debido a CORS. Verifica en Google Sheets.',
-                        corsBlocked: true
+                        success: false, 
+                        error: 'CORS bloqueado: Google Apps Script no está configurado para recibir peticiones desde este dominio. ACTUALIZA el Google Apps Script con los headers CORS y vuelve a desplegar la aplicación web.',
+                        corsBlocked: true,
+                        requiresAction: 'Necesitas actualizar Google Apps Script y configurar CORS'
                     };
                 } catch (noCorsError) {
                     clearTimeout(noCorsTimeoutId);
@@ -898,6 +912,63 @@ const SyncManager = {
         return await this.syncNow();
     },
     
+    // Función para verificar la conexión con Google Apps Script
+    async testConnection() {
+        if (!this.syncUrl || !this.syncToken) {
+            return { success: false, error: 'URL o token no configurado' };
+        }
+
+        try {
+            console.log('🔍 Probando conexión con Google Apps Script...');
+            
+            // Intentar hacer una petición GET simple para verificar CORS
+            try {
+                const response = await fetch(this.syncUrl, {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const text = await response.text();
+                    console.log('✅ Conexión exitosa. Respuesta:', text);
+                    return { 
+                        success: true, 
+                        message: 'Conexión verificada correctamente. CORS está configurado.',
+                        corsWorking: true
+                    };
+                } else {
+                    return { 
+                        success: false, 
+                        error: `Error HTTP ${response.status}`,
+                        corsWorking: false
+                    };
+                }
+            } catch (corsError) {
+                if (corsError.message.includes('CORS') || corsError.message.includes('fetch')) {
+                    console.error('❌ ERROR CORS:', corsError);
+                    return { 
+                        success: false, 
+                        error: 'CORS bloqueado. Google Apps Script no está configurado correctamente. Actualiza el código en Google Apps Script y crea una NUEVA implementación.',
+                        corsWorking: false,
+                        requiresAction: 'Actualizar Google Apps Script con headers CORS y volver a desplegar'
+                    };
+                } else {
+                    throw corsError;
+                }
+            }
+        } catch (e) {
+            console.error('❌ Error probando conexión:', e);
+            return { 
+                success: false, 
+                error: e.message || 'Error desconocido',
+                corsWorking: false
+            };
+        }
+    },
+
     // Función de diagnóstico para verificar el estado de la cola
     async diagnoseQueue() {
         try {
