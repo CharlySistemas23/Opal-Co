@@ -4382,8 +4382,24 @@ const Settings = {
                 return;
             }
 
-            // Verificar si está autenticado con Google
-            const isAuthenticated = SyncManager && SyncManager.isAuthenticated;
+            // Verificar si está autenticado con Google (verificar tanto la variable como el token guardado)
+            let isAuthenticated = false;
+            if (SyncManager) {
+                // Verificar si hay un token guardado en gapi.client
+                try {
+                    if (typeof gapi !== 'undefined' && gapi.client && gapi.client.getToken) {
+                        const token = gapi.client.getToken();
+                        isAuthenticated = !!(token && token.access_token);
+                    }
+                } catch (e) {
+                    // Si no está disponible gapi, usar la variable de SyncManager
+                    isAuthenticated = SyncManager.isAuthenticated || false;
+                }
+                // Si no hay token pero la variable dice que está autenticado, usar esa
+                if (!isAuthenticated && SyncManager.isAuthenticated) {
+                    isAuthenticated = true;
+                }
+            }
             
             // Buscar el último log de sincronización real (no de prueba)
             const syncLogs = await DB.getAll('sync_logs') || [];
@@ -4462,8 +4478,23 @@ const Settings = {
 
             // Determinar estado basado en el último log
             const isSuccess = lastSync && lastSync.status === 'synced';
-            const statusText = isSuccess ? 'Sincronizado' : (lastSync ? 'Error' : 'Listo');
-            const statusColor = isSuccess ? 'var(--color-success)' : (lastSync ? 'var(--color-danger)' : 'var(--color-success)');
+            
+            // Si está autenticado, priorizar mostrar estado positivo aunque haya habido errores anteriores
+            let statusText, statusColor;
+            if (isAuthenticated) {
+                if (isSuccess) {
+                    statusText = 'Sincronizado';
+                    statusColor = 'var(--color-success)';
+                } else {
+                    // Si está autenticado pero hubo un error anterior, mostrar "Listo" o "Conectado"
+                    statusText = 'Conectado';
+                    statusColor = 'var(--color-success)';
+                }
+            } else {
+                // Si no está autenticado, mostrar el estado real del último log
+                statusText = isSuccess ? 'Sincronizado' : (lastSync ? 'Error' : 'Listo');
+                statusColor = isSuccess ? 'var(--color-success)' : (lastSync ? 'var(--color-danger)' : 'var(--color-success)');
+            }
 
             statusContainer.innerHTML = `
                 <div style="margin-bottom: var(--spacing-xs);">
@@ -4474,6 +4505,7 @@ const Settings = {
                 </div>
                 <div style="font-size: 10px; color: var(--color-text-secondary);">
                     ${lastSync ? `Última sincronización: ${Utils.formatDate(lastSync.created_at, 'DD/MM/YYYY HH:mm')}` : 'Sin sincronizaciones previas'}
+                    ${lastSync && !isSuccess && isAuthenticated ? ' (error anterior)' : ''}
                 </div>
                 ${isAuthenticated ? `
                     <div style="font-size: 10px; color: var(--color-success); margin-top: 4px;">
