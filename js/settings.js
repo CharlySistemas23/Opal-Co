@@ -163,7 +163,7 @@ const Settings = {
                 <!-- MÓDULO: TICKETS / RECIBOS -->
                 <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
                     <h3 style="margin-bottom: var(--spacing-md); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: space-between;">
-                        <span><i class="fas fa-receipt"></i> Tickets / Recibos - GP-5830 Series</span>
+                        <span><i class="fas fa-receipt"></i> Tickets / Recibos - GP-5838 SERIES</span>
                         <span id="printer-status-badge" class="printer-status-badge disconnected">
                             <i class="fas fa-circle"></i> Desconectada
                         </span>
@@ -174,7 +174,7 @@ const Settings = {
                         <div style="display: flex; align-items: start; gap: var(--spacing-sm); font-size: 11px; color: var(--color-text-secondary);">
                             <i class="fas fa-info-circle" style="color: var(--color-primary); margin-top: 2px;"></i>
                             <div>
-                                <div style="font-weight: 600; margin-bottom: 4px;"><strong>GP-5830 Series</strong> - Impresora térmica 58mm</div>
+                                <div style="font-weight: 600; margin-bottom: 4px;"><strong>GP-5838 SERIES</strong> - Impresora térmica 58mm</div>
                                 <div style="font-size: 10px; line-height: 1.4;">
                                     <strong>Requisitos:</strong> Chrome o Edge (versión 89+), impresora encendida, cable USB conectado. 
                                     Al conectar, selecciona manualmente tu impresora en la lista de dispositivos.
@@ -214,7 +214,8 @@ const Settings = {
                             <div class="form-group">
                                 <label>Modelo de Impresora</label>
                                 <select id="setting-printer-model" class="form-select" onchange="window.Settings.onPrinterModelChange()">
-                                    <option value="GP-5830">GP-5830 Series (Recomendado)</option>
+                                    <option value="GP-5838">GP-5838 SERIES (Recomendado)</option>
+                                    <option value="GP-5830">GP-5830 Series</option>
                                     <option value="EC-58110">EC Line 58110</option>
                                     <option value="GP-5830II">GP-5830II</option>
                                     <option value="custom">Personalizada</option>
@@ -230,7 +231,7 @@ const Settings = {
                                     <span id="printer-port-status" style="font-weight: 600;">Puerto USB: No conectado</span>
                                 </div>
                                 <div style="margin-top: 6px; padding: 6px; background: rgba(26, 26, 26, 0.05); border-radius: var(--radius-xs); font-size: 9px; color: var(--color-text-tertiary); line-height: 1.4;">
-                                    <i class="fas fa-info-circle"></i> <strong>Consejo:</strong> Al hacer clic en "Conectar", se abrirá una ventana para seleccionar tu impresora. Busca "GP-5830" o cualquier puerto USB (como USB004). Si no aparece, verifica que la impresora esté encendida y el cable USB bien conectado.
+                                    <i class="fas fa-info-circle"></i> <strong>Consejo:</strong> Al hacer clic en "Conectar", se abrirá una ventana para seleccionar tu impresora. Busca "GP-5838" o cualquier puerto USB (como USB004). Si no aparece, verifica que la impresora esté encendida y el cable USB bien conectado.
                                 </div>
                             </div>
                             <div class="form-group">
@@ -432,17 +433,18 @@ const Settings = {
                         <i class="fas fa-sync"></i> Configuración de Sincronización
                     </h3>
                     <div class="form-group">
-                        <label>URL Apps Script</label>
-                        <input type="text" id="setting-sync-url" class="form-input" placeholder="https://script.google.com/...">
-                        <small style="color: var(--color-text-secondary); font-size: 10px;">URL del Web App de Google Apps Script</small>
+                        <label>Google Client ID</label>
+                        <input type="text" id="setting-google-client-id" class="form-input" placeholder="363340186026-xxxxx.apps.googleusercontent.com">
+                        <small style="color: var(--color-text-secondary); font-size: 10px;">ID de cliente OAuth obtenido de Google Cloud Console</small>
                     </div>
                     <div class="form-group">
-                        <label>Token de Seguridad</label>
-                        <input type="text" id="setting-sync-token" class="form-input" placeholder="Token seguro">
-                        <button class="btn-secondary btn-sm" onclick="window.Settings.generateToken()" style="margin-top: 5px; width: 100%;">
-                            <i class="fas fa-key"></i> Generar Token
-                        </button>
+                        <label>Spreadsheet ID</label>
+                        <input type="text" id="setting-spreadsheet-id" class="form-input" placeholder="1awlhCklyVlnYxhC3i6wMYhgDE...">
+                        <small style="color: var(--color-text-secondary); font-size: 10px;">ID del spreadsheet de Google Sheets (de la URL del documento)</small>
                     </div>
+                    <button class="btn-secondary btn-sm" onclick="SyncManager.testGoogleAuth()" style="margin-top: 5px; width: 100%;">
+                        <i class="fas fa-key"></i> Probar Autenticación
+                    </button>
                     <div class="form-group">
                         <label>Sincronización Automática</label>
                         <select id="setting-auto-sync" class="form-select">
@@ -829,10 +831,10 @@ const Settings = {
             });
 
             // Sincronización
-            const syncUrlEl = document.getElementById('setting-sync-url');
-            const syncTokenEl = document.getElementById('setting-sync-token');
-            if (syncUrlEl && settingsMap.sync_url) syncUrlEl.value = settingsMap.sync_url;
-            if (syncTokenEl && settingsMap.sync_token) syncTokenEl.value = settingsMap.sync_token;
+            const googleClientIdEl = document.getElementById('setting-google-client-id');
+            const spreadsheetIdEl = document.getElementById('setting-spreadsheet-id');
+            if (googleClientIdEl && settingsMap.google_client_id) googleClientIdEl.value = settingsMap.google_client_id;
+            if (spreadsheetIdEl && settingsMap.google_sheets_spreadsheet_id) spreadsheetIdEl.value = settingsMap.google_sheets_spreadsheet_id;
 
             // Tipos de cambio
             const exchangeUsdEl = document.getElementById('setting-exchange-usd');
@@ -972,55 +974,33 @@ const Settings = {
 
     async saveSyncSettings() {
         try {
-            const urlInput = document.getElementById('setting-sync-url');
-            const tokenInput = document.getElementById('setting-sync-token');
+            const googleClientIdInput = document.getElementById('setting-google-client-id');
+            const spreadsheetIdInput = document.getElementById('setting-spreadsheet-id');
             const autoSyncSelect = document.getElementById('setting-auto-sync');
 
-            if (!urlInput || !tokenInput) {
+            if (!googleClientIdInput || !spreadsheetIdInput) {
                 Utils.showNotification('Error: No se encontraron los campos de configuración', 'error');
                 return;
             }
 
-            const url = urlInput.value.trim();
-            const token = tokenInput.value.trim();
+            const googleClientId = googleClientIdInput.value.trim();
+            const spreadsheetId = spreadsheetIdInput.value.trim();
             const autoSync = autoSyncSelect?.value || 'disabled';
 
-            // Validaciones
-            if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-                Utils.showNotification('La URL debe comenzar con http:// o https://', 'error');
+            if (!googleClientId || !spreadsheetId) {
+                Utils.showNotification('El Google Client ID y Spreadsheet ID son requeridos', 'error');
                 return;
             }
 
-            if (url && !url.includes('script.google.com')) {
-                const confirmContinue = confirm('La URL no parece ser de Google Apps Script. ¿Deseas continuar?');
-                if (!confirmContinue) return;
-            }
+            await DB.put('settings', { key: 'google_client_id', value: googleClientId, updated_at: new Date().toISOString() });
+            await DB.put('settings', { key: 'google_sheets_spreadsheet_id', value: spreadsheetId, updated_at: new Date().toISOString() });
+            await DB.put('settings', { key: 'auto_sync', value: autoSync, updated_at: new Date().toISOString() });
 
-            if (token && token.length < 8) {
-                const confirmContinue = confirm('El token parece muy corto. ¿Estás seguro de que es correcto?');
-                if (!confirmContinue) return;
+            // Actualizar valores en SyncManager
+            if (SyncManager) {
+                SyncManager.googleClientId = googleClientId;
+                SyncManager.spreadsheetId = spreadsheetId;
             }
-
-        await DB.put('settings', { key: 'sync_url', value: url, updated_at: new Date().toISOString() });
-        await DB.put('settings', { key: 'sync_token', value: token, updated_at: new Date().toISOString() });
-        await DB.put('settings', { key: 'auto_sync', value: autoSync, updated_at: new Date().toISOString() });
-
-            // Verificar que se guardó correctamente
-            const savedUrl = await DB.get('settings', 'sync_url');
-            const savedToken = await DB.get('settings', 'sync_token');
-            
-            if (!savedUrl || savedUrl.value !== url) {
-                throw new Error('Error al guardar la URL');
-            }
-            if (!savedToken || savedToken.value !== token) {
-                throw new Error('Error al guardar el token');
-            }
-
-        // Update sync manager
-        if (typeof SyncManager !== 'undefined') {
-            SyncManager.syncUrl = url;
-            SyncManager.syncToken = token;
-        }
 
             Utils.showNotification('Configuración de sincronización guardada correctamente', 'success');
         await this.loadSyncStatus();
@@ -3552,10 +3532,10 @@ const Settings = {
         const confirmReset = confirm('¿Restablecer toda la configuración de impresión a los valores predeterminados?');
         if (!confirmReset) return;
 
-        // Valores predeterminados para GP-5830
+        // Valores predeterminados para GP-5838 SERIES
         const defaults = {
-            printer_model: 'GP-5830',
-            printer_name: 'GP-5830 Series',
+            printer_model: 'GP-5838',
+            printer_name: 'GP-5838 SERIES',
             printer_baud: '9600',
             printer_width: '58',
             printer_density: 'medium',
@@ -3605,9 +3585,9 @@ const Settings = {
     async savePrinterSettings() {
         try {
             // Configuración de hardware
-            const printerModel = document.getElementById('setting-printer-model')?.value || 'GP-5830';
+            const printerModel = document.getElementById('setting-printer-model')?.value || 'GP-5838';
             const printerName = printerModel === 'custom' 
-                ? (document.getElementById('setting-printer-name')?.value || 'GP-5830')
+                ? (document.getElementById('setting-printer-name')?.value || 'GP-5838 SERIES')
                 : printerModel;
             const printerBaud = document.getElementById('setting-printer-baud')?.value || '9600';
             const printerWidth = document.getElementById('setting-printer-width')?.value || '58';
@@ -3656,12 +3636,59 @@ const Settings = {
                 ticket_footer: ticketFooterMsg
             };
 
+            // Guardar cada setting individualmente con verificación
             for (const [key, value] of Object.entries(settingsToSave)) {
-                await DB.put('settings', { 
-                    key: key, 
-                    value: value, 
-                    updated_at: new Date().toISOString() 
-                });
+                try {
+                    // Verificar si existe antes de guardar
+                    const existing = await DB.get('settings', key);
+                    const settingData = { 
+                        key: key, 
+                        value: value, 
+                        updated_at: new Date().toISOString() 
+                    };
+                    
+                    // Si existe, agregar created_at del existente
+                    if (existing && existing.created_at) {
+                        settingData.created_at = existing.created_at;
+                    } else {
+                        settingData.created_at = new Date().toISOString();
+                    }
+                    
+                    await DB.put('settings', settingData);
+                    console.log(`✅ Setting guardado: ${key} = ${value}`);
+                } catch (e) {
+                    console.error(`❌ Error guardando setting ${key}:`, e);
+                    // Intentar con add si put falla
+                    try {
+                        await DB.add('settings', { 
+                            key: key, 
+                            value: value, 
+                            created_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString() 
+                        });
+                        console.log(`✅ Setting agregado (add): ${key} = ${value}`);
+                    } catch (e2) {
+                        console.error(`❌ Error también con add para ${key}:`, e2);
+                    }
+                }
+            }
+
+            // Verificar que se guardaron correctamente
+            const verificationPromises = Object.keys(settingsToSave).map(async (key) => {
+                const saved = await DB.get('settings', key);
+                if (!saved || saved.value !== settingsToSave[key]) {
+                    console.warn(`⚠️ Advertencia: Setting ${key} no se guardó correctamente`);
+                    return false;
+                }
+                return true;
+            });
+            
+            const verificationResults = await Promise.all(verificationPromises);
+            const allSaved = verificationResults.every(r => r === true);
+            
+            if (!allSaved) {
+                console.error('Algunos settings no se guardaron correctamente');
+                Utils.showNotification('Configuración guardada con advertencias. Algunos valores pueden no haberse guardado.', 'warning');
             }
 
             // Actualizar configuración del módulo Printer
@@ -3673,6 +3700,7 @@ const Settings = {
 
             // Guardar en localStorage también para acceso rápido
             localStorage.setItem('printer_settings', JSON.stringify(settingsToSave));
+            localStorage.setItem('printer_settings_timestamp', new Date().toISOString());
 
             Utils.showNotification('Configuración de impresión guardada correctamente', 'success');
         } catch (e) {
@@ -4218,91 +4246,11 @@ const Settings = {
     },
 
     async testSyncConnection() {
-        Utils.showNotification('Probando conexión...', 'info');
-        
-        const url = document.getElementById('setting-sync-url')?.value;
-        const token = document.getElementById('setting-sync-token')?.value;
-
-        if (!url || !token) {
-            Utils.showNotification('Configura la URL y Token primero', 'error');
-            return;
-        }
-
-        try {
-            console.log('Probando conexión POST a:', url);
-            const testData = {
-                token: token,
-                entity_type: 'test',
-                records: [],
-                device_id: 'test-device',
-                timestamp: new Date().toISOString()
-            };
-
-            // Usar mode: 'no-cors' para Google Apps Script
-            const response = await fetch(url, {
-                method: 'POST',
-                mode: 'no-cors', // Crítico para Google Apps Script
-                headers: {
-                    'Content-Type': 'text/plain;charset=utf-8'
-                },
-                body: JSON.stringify(testData),
-                redirect: 'follow'
-            });
-
-            console.log('Petición enviada, response type:', response.type);
-
-            // Con mode: 'no-cors', no podemos leer la respuesta pero la petición se envió
-            // Si llegamos aquí sin error, la conexión funciona
-            Utils.showNotification('Conexión establecida con Google Sheets', 'success');
-            console.log('Petición enviada correctamente (no-cors mode)');
-            
-            // Guardar log de prueba exitosa
-            if (typeof SyncManager !== 'undefined') {
-                await SyncManager.addLog('info', 'Prueba de conexión exitosa', 'synced');
-            }
-            
-            // Recargar estado de sincronización
-            await this.loadSyncStatus();
-            
-            // Mostrar mensaje informativo
-            setTimeout(() => {
-                Utils.showNotification('Verifica en Google Sheets que los datos lleguen', 'info');
-            }, 2000);
-            
-        } catch (e) {
-            console.error('Error completo:', e);
-            let errorMsg = e.message || 'Error desconocido';
-            
-            // Mensajes más amigables según el tipo de error
-            if (errorMsg.includes('CORS') || errorMsg.includes('Failed to fetch')) {
-                errorMsg = 'Error de CORS. Verifica que el script esté desplegado correctamente y que tenga acceso público.';
-            } else if (errorMsg.includes('NetworkError')) {
-                errorMsg = 'Error de red. Verifica tu conexión a internet.';
-            }
-            
-            Utils.showNotification('Error al conectar: ' + errorMsg, 'error');
-            
-            // Mostrar ayuda adicional
-            setTimeout(() => {
-                UI.showModal('Ayuda - Error de Conexión', `
-                    <div style="padding: var(--spacing-md);">
-                        <h4 style="margin-bottom: var(--spacing-sm);">Posibles soluciones:</h4>
-                        <ol style="margin-left: var(--spacing-md); line-height: 1.8;">
-                            <li><strong>Verifica la URL:</strong> Debe ser la URL completa de tu Google Apps Script Web App</li>
-                            <li><strong>Verifica el Token:</strong> Debe coincidir exactamente con el configurado en el script</li>
-                            <li><strong>Verifica el despliegue:</strong> El script debe estar desplegado como "Aplicación web" con acceso "Cualquiera"</li>
-                            <li><strong>Problemas CORS:</strong> Si usas archivos locales (file://), considera usar un servidor local o subir a un hosting</li>
-                            <li><strong>Revisa la consola:</strong> Abre las herramientas de desarrollador (F12) para más detalles</li>
-                        </ol>
-                        <div style="margin-top: var(--spacing-md); padding: var(--spacing-sm); background: var(--color-bg-secondary); border-radius: var(--radius-sm);">
-                            <strong>URL de ejemplo:</strong><br>
-                            <code style="font-size: 11px; word-break: break-all;">https://script.google.com/macros/s/AKfycby.../exec</code>
-                        </div>
-                    </div>
-                `, [
-                    { text: 'Cerrar', class: 'btn-primary', onclick: () => UI.closeModal() }
-                ]);
-            }, 500);
+        // Redirigir a la función de prueba de autenticación de Google
+        if (SyncManager && SyncManager.testGoogleAuth) {
+            await SyncManager.testGoogleAuth();
+        } else {
+            Utils.showNotification('Configura el Google Client ID y Spreadsheet ID primero', 'error');
         }
     },
 
@@ -4410,9 +4358,9 @@ const Settings = {
 
         try {
             // Verificar si está configurado
-            const urlSetting = await DB.get('settings', 'sync_url');
-            const tokenSetting = await DB.get('settings', 'sync_token');
-            const isConfigured = urlSetting?.value && tokenSetting?.value;
+            const googleClientIdSetting = await DB.get('settings', 'google_client_id');
+            const spreadsheetIdSetting = await DB.get('settings', 'google_sheets_spreadsheet_id');
+            const isConfigured = googleClientIdSetting?.value && spreadsheetIdSetting?.value;
 
             if (!isConfigured) {
                 statusContainer.innerHTML = `
@@ -6050,16 +5998,10 @@ const Settings = {
             }
 
             // Verificar sincronización
-            if (!settingsMap.sync_url) {
-                warnings.push('URL de sincronización no configurada');
+            if (!settingsMap.google_client_id || !settingsMap.google_sheets_spreadsheet_id) {
+                warnings.push('Google Client ID o Spreadsheet ID no configurados');
             } else {
-                checks.push('URL de sincronización configurada');
-            }
-
-            if (!settingsMap.sync_token) {
-                warnings.push('Token de sincronización no configurado');
-            } else {
-                checks.push('Token de sincronización configurado');
+                checks.push('Google Sheets API configurada correctamente');
             }
 
             const reportHTML = `
