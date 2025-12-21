@@ -11,6 +11,12 @@ const SyncManager = {
     gapiLoaded: false,
     gsiLoaded: false,
     isAuthenticated: false,
+    
+    // Configuración multisucursal
+    MULTI_BRANCH_CONFIG: {
+        SEPARATE_SHEETS: true, // true = hojas separadas por sucursal, false = una hoja con columna branch_id
+        BRANCH_SHEET_SUFFIX: '_BRANCH_' // Sufijo para hojas por sucursal
+    },
 
     async init() {
         // Load sync settings
@@ -712,7 +718,10 @@ const SyncManager = {
             });
 
             // Agregar headers después de crear la hoja
-            const headers = this.getSheetHeaders(sheetName);
+            // Determinar el nombre base de la hoja (sin sufijo de sucursal)
+            const baseSheetName = Object.values(this.getSheetName('')).find(base => sheetName.startsWith(base)) || 
+                                 sheetName.split(this.MULTI_BRANCH_CONFIG.BRANCH_SHEET_SUFFIX)[0];
+            const headers = this.getSheetHeaders(baseSheetName);
             if (headers.length > 0) {
                 await gapi.client.sheets.spreadsheets.values.update({
                     spreadsheetId: this.spreadsheetId,
@@ -729,6 +738,26 @@ const SyncManager = {
             console.error(`Error obteniendo/creando hoja ${sheetName}:`, error);
             throw error;
         }
+    },
+
+    // Obtener o crear hoja por sucursal
+    async getOrCreateBranchSheet(baseSheetName, branchId, branchName = null) {
+        if (!this.MULTI_BRANCH_CONFIG.SEPARATE_SHEETS) {
+            // Si no se separan hojas, usar la hoja base
+            return await this.getOrCreateSheet(baseSheetName);
+        }
+        
+        // Crear nombre de hoja con sufijo de sucursal
+        const branchDisplayName = branchName || branchId || 'UNKNOWN';
+        let sheetName = baseSheetName + this.MULTI_BRANCH_CONFIG.BRANCH_SHEET_SUFFIX + branchDisplayName;
+        
+        // Limitar longitud del nombre (Google Sheets tiene límite de 100 caracteres)
+        const maxLength = 100 - this.MULTI_BRANCH_CONFIG.BRANCH_SHEET_SUFFIX.length;
+        if (sheetName.length > maxLength) {
+            sheetName = baseSheetName + this.MULTI_BRANCH_CONFIG.BRANCH_SHEET_SUFFIX + branchId.substring(0, 20);
+        }
+        
+        return await this.getOrCreateSheet(sheetName);
     },
 
     // Obtener headers según el nombre de la hoja
@@ -1050,83 +1079,61 @@ const SyncManager = {
         console.log(`📤 Enviando ${upsertRecords.length} registros y ${deleteRecords.length} eliminaciones de tipo ${entityType} a Google Sheets usando API...`);
 
         try {
-            const sheetName = this.getSheetName(entityType);
+            const baseSheetName = this.getSheetName(entityType);
             
-            // Asegurar que la hoja existe
-            await this.getOrCreateSheet(sheetName);
-
-            // Convertir records a filas con el formato correcto
-            const rows = upsertRecords.map(record => this.convertRecordToRow(entityType, record));
-
-            // Obtener headers según el tipo de hoja
-            const headers = this.getSheetHeaders(sheetName);
-
-            // Verificar si la hoja tiene headers
-            let sheetInfo;
-            try {
-                sheetInfo = await gapi.client.sheets.spreadsheets.values.get({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `${sheetName}!A1:Z1`
-                });
-            } catch (e) {
-                sheetInfo = { result: { values: null } };
-            }
-
-            let startRow = 1;
-            let hasHeaders = false;
+            // Determinar si esta entidad necesita hojas separadas por sucursal
+            const needsBranchSheets = ['sale', 'inventory_item', 'inventory_transfer'].includes(entityType);
             
-            if (!sheetInfo.result.values || sheetInfo.result.values.length === 0 || !sheetInfo.result.values[0] || sheetInfo.result.values[0].length === 0) {
-                // Escribir headers si no existen
-                if (headers.length > 0) {
-                    await gapi.client.sheets.spreadsheets.values.update({
-                        spreadsheetId: this.spreadsheetId,
-                        range: `${sheetName}!A1`,
-                        valueInputOption: 'RAW',
-                        resource: {
-                            values: [headers]
-                        }
-                    });
-                }
-                startRow = 2;
-            } else {
-                hasHeaders = true;
-                // Buscar última fila con datos
-                try {
-                    const allData = await gapi.client.sheets.spreadsheets.values.get({
-                        spreadsheetId: this.spreadsheetId,
-                        range: `${sheetName}!A:Z`
-                    });
-                    startRow = (allData.result.values?.length || 1) + 1;
-                } catch (e) {
-                    startRow = 2; // Si hay headers, empezar en fila 2
-                }
-            }
-
-            // Para sales, también necesitamos escribir items y payments
-            if (entityType === 'sale' && rows.length > 0) {
-                // Escribir ventas
-                await this.writeSalesData(upsertRecords, startRow);
-            } else if (rows.length > 0) {
-                // Escribir datos normales
-                await gapi.client.sheets.spreadsheets.values.append({
-                    spreadsheetId: this.spreadsheetId,
-                    range: `${sheetName}!A${startRow}`,
-                    valueInputOption: 'RAW',
-                    insertDataOption: 'INSERT_ROWS',
-                    resource: {
-                        values: rows
+            if (needsBranchSheets && this.MULTI_BRANCH_CONFIG.SEPARATE_SHEETS) {
+                // Agrupar registros por sucursal
+                const recordsByBranch = {};
+                upsertRecords.forEach(record => {
+                    const branchId = entityType === 'inventory_transfer' 
+                        ? (record.from_branch_id || 'UNKNOWN')
+                        : (record.branch_id || 'UNKNOWN');
+                    if (!recordsByBranch[branchId]) {
+                        recordsByBranch[branchId] = [];
                     }
+                    recordsByBranch[branchId].push(record);
                 });
+                
+                // También asegurar que existe la hoja principal
+                await this.getOrCreateSheet(baseSheetName);
+                
+                let totalAdded = 0;
+                let totalUpdated = 0;
+                
+                // Procesar cada sucursal
+                for (const branchId in recordsByBranch) {
+                    const branchRecords = recordsByBranch[branchId];
+                    const branchSheetName = await this.getOrCreateBranchSheet(baseSheetName, branchId);
+                    
+                    await this.writeRecordsToSheet(branchSheetName, baseSheetName, entityType, branchRecords);
+                    totalAdded += branchRecords.length;
+                }
+                
+                console.log(`✅ ${upsertRecords.length} registros escritos en hojas de sucursal para ${entityType}`);
+                
+                return { 
+                    success: true, 
+                    message: `${upsertRecords.length} registros de ${entityType} sincronizados exitosamente`,
+                    added: totalAdded,
+                    updated: 0
+                };
+            } else {
+                // Entidad sin hojas separadas por sucursal (empleados, usuarios, etc.)
+                await this.getOrCreateSheet(baseSheetName);
+                await this.writeRecordsToSheet(baseSheetName, baseSheetName, entityType, upsertRecords);
+                
+                console.log(`✅ ${upsertRecords.length} registros escritos en hoja ${baseSheetName}`);
+                
+                return { 
+                    success: true, 
+                    message: `${upsertRecords.length} registros de ${entityType} sincronizados exitosamente`,
+                    added: upsertRecords.length,
+                    updated: 0
+                };
             }
-
-            console.log(`✅ ${upsertRecords.length} registros escritos en hoja ${sheetName}`);
-
-            return { 
-                success: true, 
-                message: `${upsertRecords.length} registros de ${entityType} sincronizados exitosamente`,
-                added: upsertRecords.length,
-                updated: 0
-            };
         } catch (e) {
             console.error('❌ Error enviando a Google Sheets API:', e);
             return { 
@@ -1135,8 +1142,66 @@ const SyncManager = {
             };
         }
     },
+    
+    async writeRecordsToMainSheet(baseSheetName, entityType, records) {
+        // Escribir también en la hoja principal (sin sufijo de sucursal)
+        const headers = this.getSheetHeaders(baseSheetName);
+        
+        // Verificar si la hoja principal tiene headers
+        let sheetInfo;
+        try {
+            sheetInfo = await gapi.client.sheets.spreadsheets.values.get({
+                spreadsheetId: this.spreadsheetId,
+                range: `${baseSheetName}!A1:Z1`
+            });
+        } catch (e) {
+            sheetInfo = { result: { values: null } };
+        }
 
-    async writeSalesData(salesRecords, startRow) {
+        let startRow = 1;
+        
+        if (!sheetInfo.result.values || sheetInfo.result.values.length === 0 || !sheetInfo.result.values[0] || sheetInfo.result.values[0].length === 0) {
+            if (headers.length > 0) {
+                await gapi.client.sheets.spreadsheets.values.update({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${baseSheetName}!A1`,
+                    valueInputOption: 'RAW',
+                    resource: {
+                        values: [headers]
+                    }
+                });
+            }
+            startRow = 2;
+        } else {
+            try {
+                const allData = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${baseSheetName}!A:Z`
+                });
+                startRow = (allData.result.values?.length || 1) + 1;
+            } catch (e) {
+                startRow = 2;
+            }
+        }
+
+        if (entityType === 'sale' && records.length > 0) {
+            await this.writeSalesData(records, startRow, baseSheetName);
+        } else if (records.length > 0) {
+            const rows = records.map(record => this.convertRecordToRow(entityType, record));
+            
+            await gapi.client.sheets.spreadsheets.values.append({
+                spreadsheetId: this.spreadsheetId,
+                range: `${baseSheetName}!A${startRow}`,
+                valueInputOption: 'RAW',
+                insertDataOption: 'INSERT_ROWS',
+                resource: {
+                    values: rows
+                }
+            });
+        }
+    },
+
+    async writeSalesData(salesRecords, startRow, sheetName = 'SALES') {
         // Escribir ventas y sus items/payments asociados
         for (let i = 0; i < salesRecords.length; i++) {
             const sale = salesRecords[i];
