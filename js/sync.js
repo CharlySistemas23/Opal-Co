@@ -3,20 +3,33 @@
 const SyncManager = {
     syncUrl: null,
     syncToken: null,
+    googleClientId: null,
+    spreadsheetId: null,
     isOnline: navigator.onLine,
     isSyncing: false,
     paused: false,
+    gapiLoaded: false,
+    gsiLoaded: false,
+    isAuthenticated: false,
 
     async init() {
         // Load sync settings
         try {
             const urlSetting = await DB.get('settings', 'sync_url');
             const tokenSetting = await DB.get('settings', 'sync_token');
+            const clientIdSetting = await DB.get('settings', 'google_client_id');
+            const spreadsheetIdSetting = await DB.get('settings', 'google_sheets_spreadsheet_id');
+            
             this.syncUrl = urlSetting?.value || null;
             this.syncToken = tokenSetting?.value || null;
+            this.googleClientId = clientIdSetting?.value || null;
+            this.spreadsheetId = spreadsheetIdSetting?.value || null;
         } catch (e) {
             console.error('Error loading sync settings:', e);
         }
+
+        // Initialize Google API
+        await this.initGoogleAPI();
 
         // Monitor online status
         window.addEventListener('online', () => {
@@ -35,6 +48,75 @@ const SyncManager = {
 
         // Auto sync basado en configuración
         this.setupAutoSync();
+    },
+
+    async initGoogleAPI() {
+        // Wait for Google API to load
+        return new Promise((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 50; // 5 segundos máximo
+            
+            const tryInit = () => {
+                if (typeof gapi !== 'undefined' && gapi.load) {
+                    gapi.load('client', async () => {
+                        try {
+                            this.gapiLoaded = true;
+                            if (this.googleClientId) {
+                                await gapi.client.init({
+                                    apiKey: '', // Not needed for OAuth
+                                    clientId: this.googleClientId,
+                                    discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
+                                    scope: 'https://www.googleapis.com/auth/spreadsheets'
+                                });
+                                console.log('✅ Google API inicializada correctamente');
+                            }
+                            resolve();
+                        } catch (error) {
+                            console.warn('⚠️ Error inicializando Google API (puede ser normal si no hay Client ID configurado):', error);
+                            resolve(); // Resolver de todas formas para no bloquear
+                        }
+                    });
+                } else {
+                    attempts++;
+                    if (attempts < maxAttempts) {
+                        setTimeout(tryInit, 100);
+                    } else {
+                        console.warn('⚠️ Google API no está disponible después de 5 segundos');
+                        resolve(); // Resolver de todas formas para no bloquear la aplicación
+                    }
+                }
+            };
+            
+            tryInit();
+        });
+    },
+
+    async authenticate() {
+        if (!this.googleClientId) {
+            throw new Error('Google Client ID no configurado. Configúralo en Configuración → Sincronización');
+        }
+
+        return new Promise((resolve, reject) => {
+            if (typeof google === 'undefined' || !google.accounts) {
+                reject(new Error('Google API no está cargada. Recarga la página.'));
+                return;
+            }
+
+            google.accounts.oauth2.initTokenClient({
+                client_id: this.googleClientId,
+                scope: 'https://www.googleapis.com/auth/spreadsheets',
+                callback: (response) => {
+                    if (response.error) {
+                        reject(new Error(response.error));
+                        return;
+                    }
+                    gapi.client.setToken(response);
+                    this.isAuthenticated = true;
+                    console.log('✅ Autenticado con Google Sheets API');
+                    resolve(response);
+                },
+            }).requestAccessToken();
+        });
     },
 
     async setupAutoSync() {
@@ -556,183 +638,626 @@ const SyncManager = {
         return records;
     },
 
-    async sendToSheets(entityType, records, queueItems = null) {
-        if (!this.syncUrl || !this.syncToken) {
-            throw new Error('Sync URL o token no configurado');
+    // Mapeo de tipos de entidad a nombres de hojas
+    getSheetName(entityType) {
+        const sheetMap = {
+            'sale': 'SALES',
+            'inventory_item': 'INVENTORY',
+            'employee': 'EMPLOYEES',
+            'user': 'USERS',
+            'repair': 'REPAIRS',
+            'cost_entry': 'COSTS',
+            'tourist_report': 'TOURIST_DAILY_REPORTS',
+            'arrival_rate_rule': 'ARRIVAL_RATE_RULES',
+            'agency_arrival': 'AGENCY_ARRIVALS',
+            'daily_profit_report': 'DAILY_PROFIT_REPORTS',
+            'inventory_transfer': 'INVENTORY_TRANSFERS',
+            'catalog_branch': 'CATALOG_BRANCHES',
+            'catalog_agency': 'CATALOG_AGENCIES',
+            'catalog_seller': 'CATALOG_SELLERS',
+            'catalog_guide': 'CATALOG_GUIDES',
+            'customer': 'CUSTOMERS',
+            'exchange_rate_daily': 'EXCHANGE_RATES_DAILY',
+            'payment': 'PAYMENTS',
+            'cash_session': 'CASH_SESSIONS',
+            'cash_movement': 'CASH_MOVEMENTS',
+            'inventory_log': 'INVENTORY_LOG',
+            'audit_log': 'AUDIT_LOG'
+        };
+        return sheetMap[entityType] || entityType.toUpperCase();
+    },
+
+    async ensureAuthenticated() {
+        if (typeof gapi === 'undefined' || !gapi.client) {
+            throw new Error('Google API no está cargada. Recarga la página.');
+        }
+        
+        if (!this.isAuthenticated || !gapi.client.getToken()) {
+            console.log('🔐 Autenticando con Google...');
+            await this.authenticate();
+        }
+    },
+
+    async getOrCreateSheet(sheetName) {
+        if (!this.spreadsheetId) {
+            throw new Error('Spreadsheet ID no configurado. Configúralo en Configuración → Sincronización');
         }
 
-        const settings = await this.getSyncSettings();
-        // Timeout base: mínimo 60 segundos para dar tiempo suficiente a Google Apps Script
-        const baseTimeoutSeconds = parseInt(settings.timeout) || 60;
-        const baseTimeout = baseTimeoutSeconds * 1000; // Convertir a milisegundos
-        
+        await this.ensureAuthenticated();
+
+        try {
+            // Intentar obtener la hoja
+            const response = await gapi.client.sheets.spreadsheets.get({
+                spreadsheetId: this.spreadsheetId
+            });
+
+            const sheet = response.result.sheets.find(s => s.properties.title === sheetName);
+            if (sheet) {
+                return sheetName;
+            }
+
+            // Si no existe, crear la hoja
+            console.log(`📄 Creando hoja: ${sheetName}`);
+            await gapi.client.sheets.spreadsheets.batchUpdate({
+                spreadsheetId: this.spreadsheetId,
+                resource: {
+                    requests: [{
+                        addSheet: {
+                            properties: {
+                                title: sheetName
+                            }
+                        }
+                    }]
+                }
+            });
+
+            // Agregar headers después de crear la hoja
+            const headers = this.getSheetHeaders(sheetName);
+            if (headers.length > 0) {
+                await gapi.client.sheets.spreadsheets.values.update({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${sheetName}!A1`,
+                    valueInputOption: 'RAW',
+                    resource: {
+                        values: [headers]
+                    }
+                });
+            }
+
+            return sheetName;
+        } catch (error) {
+            console.error(`Error obteniendo/creando hoja ${sheetName}:`, error);
+            throw error;
+        }
+    },
+
+    // Obtener headers según el nombre de la hoja
+    getSheetHeaders(sheetName) {
+        const headerMap = {
+            'SALES': ['ID', 'Folio', 'Sucursal', 'Vendedor', 'Agencia', 'Guía', 'Cliente', 'Pasajeros', 'Moneda', 'Tipo Cambio', 'Subtotal', 'Descuento', 'Total', 'Comisión Vendedor', 'Comisión Guía', 'Estado', 'Notas', 'Fecha Creación', 'Fecha Actualización', 'Dispositivo', 'Sincronizado'],
+            'ITEMS': ['ID', 'ID Venta', 'ID Producto', 'Cantidad', 'Precio', 'Costo', 'Descuento', 'Subtotal', 'Comisión', 'Fecha Creación'],
+            'PAYMENTS': ['ID', 'ID Venta', 'Método Pago', 'Monto', 'Moneda', 'Banco', 'Tipo Pago', 'Comisión Banco', 'Fecha Creación'],
+            'INVENTORY': ['ID', 'SKU', 'Código Barras', 'Nombre', 'Metal', 'Piedra', 'Talla', 'Peso (g)', 'Medidas', 'Costo', 'Precio', 'Ubicación', 'Estado', 'Sucursal', 'Fecha Creación', 'Fecha Actualización', 'Dispositivo', 'Sincronizado'],
+            'INVENTORY_LOG': ['ID', 'ID Producto', 'Acción', 'Cantidad', 'Notas', 'Fecha'],
+            'EMPLOYEES': ['ID', 'Nombre', 'Rol', 'Sucursal', 'Activo', 'Código Barras', 'Fecha Creación'],
+            'USERS': ['ID', 'Usuario', 'ID Empleado', 'Rol', 'Activo', 'Fecha Creación'],
+            'REPAIRS': ['ID', 'Folio', 'ID Cliente', 'ID Pieza', 'Descripción', 'Estado', 'Costo', 'Fecha Creación', 'Fecha Actualización', 'Dispositivo', 'Sincronizado'],
+            'COSTS': ['ID', 'Tipo', 'Categoría', 'Monto', 'Sucursal', 'Fecha', 'Notas', 'Fecha Creación', 'Dispositivo', 'Sincronizado'],
+            'AUDIT_LOG': ['ID', 'ID Usuario', 'Acción', 'Tipo Entidad', 'ID Entidad', 'Detalles', 'Fecha'],
+            'CUSTOMERS': ['ID', 'Nombre', 'Email', 'Teléfono', 'Dirección', 'Notas', 'Fecha Creación', 'Fecha Actualización', 'Sincronizado'],
+            'CATALOG_BRANCHES': ['ID', 'Nombre', 'Dirección', 'Teléfono', 'Activa', 'Nombre Comercial', 'Dirección Fiscal', 'Teléfono Contacto', 'Email', 'RFC', 'Pie de Página', 'Logo', 'Fecha Creación', 'Fecha Actualización', 'Sincronizado'],
+            'CATALOG_AGENCIES': ['ID', 'Nombre', 'Activa', 'Fecha Creación', 'Fecha Actualización', 'Sincronizado'],
+            'CATALOG_SELLERS': ['ID', 'Nombre', 'Código Barras', 'Regla Comisión', 'Activo', 'Fecha Creación', 'Fecha Actualización', 'Sincronizado'],
+            'CATALOG_GUIDES': ['ID', 'Nombre', 'ID Agencia', 'Código Barras', 'Regla Comisión', 'Activo', 'Fecha Creación', 'Fecha Actualización', 'Sincronizado'],
+            'TOURIST_DAILY_REPORTS': ['ID', 'Fecha', 'Sucursal', 'Tipo Cambio', 'Estado', 'Observaciones', 'Total Cash USD', 'Total Cash MXN', 'Subtotal', 'Adicional', 'Total', 'Fecha Creación', 'Fecha Actualización', 'Dispositivo', 'Sincronizado'],
+            'ARRIVAL_RATE_RULES': ['ID', 'ID Agencia', 'ID Sucursal', 'Pasajeros Mín', 'Pasajeros Máx', 'Tipo Unidad', 'Tarifa por PAX', 'Vigencia Desde', 'Vigencia Hasta', 'Notas', 'Fecha Creación', 'Fecha Actualización', 'Estado Sync', 'Sincronizado'],
+            'AGENCY_ARRIVALS': ['ID', 'Fecha', 'ID Sucursal', 'ID Agencia', 'Pasajeros', 'Tipo Unidad', 'Costo Llegada', 'Notas', 'Fecha Creación', 'Fecha Actualización', 'Estado Sync', 'Sincronizado'],
+            'DAILY_PROFIT_REPORTS': ['ID', 'Fecha', 'ID Sucursal', 'Revenue Ventas', 'COGS Total', 'Comisiones Vendedores', 'Comisiones Guías', 'Costos Llegadas', 'Costos Fijos Diarios', 'Costos Variables Diarios', 'Utilidad Antes Impuestos', 'Margen %', 'Total Pasajeros', 'Tipo Cambio', 'Fecha Creación', 'Fecha Actualización', 'Estado Sync', 'Sincronizado'],
+            'EXCHANGE_RATES_DAILY': ['Fecha', 'USD', 'CAD', 'Fuente', 'Fecha Creación', 'Fecha Actualización', 'Sincronizado'],
+            'INVENTORY_TRANSFERS': ['ID', 'Folio', 'Sucursal Origen', 'Sucursal Destino', 'Estado', 'Cantidad Items', 'Notas', 'Fecha Creación', 'Fecha Actualización', 'Fecha Completado', 'Creado Por', 'Estado Sync', 'Sincronizado']
+        };
+        return headerMap[sheetName] || [];
+    },
+
+    // Convertir record a fila según el tipo de entidad
+    convertRecordToRow(entityType, record) {
+        switch (entityType) {
+            case 'sale':
+                return [
+                    record.id,
+                    record.folio || '',
+                    record.branch_id || '',
+                    record.seller_id || '',
+                    record.agency_id || '',
+                    record.guide_id || '',
+                    record.customer_id || '',
+                    record.passengers || 1,
+                    record.currency || 'MXN',
+                    record.exchange_rate || 1,
+                    record.subtotal || 0,
+                    record.discount || 0,
+                    record.total || 0,
+                    record.seller_commission || 0,
+                    record.guide_commission || 0,
+                    record.status || 'completada',
+                    record.notes || '',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    record.device_id || 'unknown',
+                    new Date().toISOString()
+                ];
+            case 'inventory_item':
+                return [
+                    record.id,
+                    record.sku || '',
+                    record.barcode || '',
+                    record.name || '',
+                    record.metal || '',
+                    record.stone || '',
+                    record.size || '',
+                    record.weight_g || 0,
+                    record.measures || '',
+                    record.cost || 0,
+                    record.price || 0,
+                    record.location || '',
+                    record.status || 'disponible',
+                    record.branch_id || '',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    record.device_id || 'unknown',
+                    new Date().toISOString()
+                ];
+            case 'employee':
+                return [
+                    record.id,
+                    record.name || '',
+                    record.role || '',
+                    record.branch_id || '',
+                    record.active !== false, // Mantener boolean para employees
+                    record.barcode || '',
+                    record.created_at || ''
+                ];
+            case 'user':
+                return [
+                    record.id,
+                    record.username || '',
+                    record.employee_id || '',
+                    record.role || '',
+                    record.active !== false, // Mantener boolean para users
+                    record.created_at || ''
+                ];
+            case 'customer':
+                return [
+                    record.id,
+                    record.name || '',
+                    record.email || '',
+                    record.phone || '',
+                    record.address || '',
+                    record.notes || '',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    new Date().toISOString()
+                ];
+            case 'cost_entry':
+                return [
+                    record.id,
+                    record.type || '',
+                    record.category || '',
+                    record.amount || 0,
+                    record.branch_id || '',
+                    record.date || '',
+                    record.notes || '',
+                    record.created_at || '',
+                    record.device_id || 'unknown',
+                    new Date().toISOString()
+                ];
+            case 'inventory_log':
+                return [
+                    record.id,
+                    record.item_id || '',
+                    record.action || '',
+                    record.quantity || 0,
+                    record.notes || '',
+                    record.created_at || ''
+                ];
+            case 'audit_log':
+                let detailsText = '';
+                try {
+                    if (typeof record.details === 'string') {
+                        detailsText = record.details;
+                    } else {
+                        detailsText = JSON.stringify(record.details || {});
+                    }
+                } catch (e) {
+                    detailsText = String(record.details || '');
+                }
+                return [
+                    record.id,
+                    record.user_id || '',
+                    record.action || '',
+                    record.entity_type || '',
+                    record.entity_id || '',
+                    detailsText,
+                    record.created_at || ''
+                ];
+            case 'repair':
+                return [
+                    record.id,
+                    record.folio || '',
+                    record.customer_id || '',
+                    record.item_id || '',
+                    record.description || '',
+                    record.status || '',
+                    record.cost || 0,
+                    record.created_at || '',
+                    record.updated_at || '',
+                    record.device_id || 'unknown',
+                    new Date().toISOString()
+                ];
+            case 'catalog_branch':
+                return [
+                    record.id,
+                    record.name || '',
+                    record.address || '',
+                    record.phone || '',
+                    record.active ? 'Sí' : 'No',
+                    record.business_name || '',
+                    record.business_address || '',
+                    record.business_phone || '',
+                    record.business_email || '',
+                    record.business_rfc || '',
+                    record.business_footer || '',
+                    record.business_logo ? 'Sí' : 'No',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    new Date().toISOString()
+                ];
+            case 'catalog_agency':
+                return [
+                    record.id,
+                    record.name || '',
+                    record.active ? 'Sí' : 'No',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    new Date().toISOString()
+                ];
+            case 'catalog_seller':
+                return [
+                    record.id,
+                    record.name || '',
+                    record.barcode || '',
+                    record.commission_rule || '',
+                    record.active ? 'Sí' : 'No',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    new Date().toISOString()
+                ];
+            case 'catalog_guide':
+                return [
+                    record.id,
+                    record.name || '',
+                    record.agency_id || '',
+                    record.barcode || '',
+                    record.commission_rule || '',
+                    record.active ? 'Sí' : 'No',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    new Date().toISOString()
+                ];
+            case 'exchange_rate_daily':
+                return [
+                    record.date || '',
+                    record.usd || 0,
+                    record.cad || 0,
+                    record.source || 'manual',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    new Date().toISOString()
+                ];
+            case 'daily_profit_report':
+                return [
+                    record.id,
+                    record.date || '',
+                    record.branch_id || '',
+                    record.revenue_sales_total || record.revenue || 0,
+                    record.cogs_total || 0,
+                    record.commissions_sellers_total || 0,
+                    record.commissions_guides_total || 0,
+                    record.arrivals_total || record.arrival_costs || 0,
+                    record.fixed_costs_daily || 0,
+                    record.variable_costs_daily || 0,
+                    record.profit_before_taxes || 0,
+                    record.profit_margin || 0,
+                    record.passengers_total || record.total_passengers || 0,
+                    record.exchange_rate || 1,
+                    record.created_at || '',
+                    record.updated_at || '',
+                    record.sync_status || 'pending',
+                    new Date().toISOString()
+                ];
+            case 'arrival_rate_rule':
+                return [
+                    record.id,
+                    record.agency_id || '',
+                    record.branch_id || '',
+                    record.passengers_min || 0,
+                    record.passengers_max || 0,
+                    record.unit_type || '',
+                    record.rate_per_pax || 0,
+                    record.valid_from || '',
+                    record.valid_until || '',
+                    record.notes || '',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    record.sync_status || 'pending',
+                    new Date().toISOString()
+                ];
+            case 'agency_arrival':
+                return [
+                    record.id,
+                    record.date || '',
+                    record.branch_id || '',
+                    record.agency_id || '',
+                    record.passengers || 0,
+                    record.unit_type || '',
+                    record.arrival_cost || 0,
+                    record.notes || '',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    record.sync_status || 'pending',
+                    new Date().toISOString()
+                ];
+            case 'inventory_transfer':
+                return [
+                    record.id,
+                    record.folio || '',
+                    record.from_branch_id || '',
+                    record.to_branch_id || '',
+                    record.status || 'pending',
+                    record.items_count || 0,
+                    record.notes || '',
+                    record.created_at || '',
+                    record.updated_at || '',
+                    record.completed_at || '',
+                    record.created_by || '',
+                    record.sync_status || 'pending',
+                    new Date().toISOString()
+                ];
+            default:
+                // Para tipos no mapeados, usar valores del objeto en orden alfabético
+                const keys = Object.keys(record).sort();
+                return keys.map(key => record[key]);
+        }
+    },
+
+    async sendToSheets(entityType, records, queueItems = null) {
+        // Verificar que tenemos las credenciales necesarias
+        if (!this.googleClientId) {
+            throw new Error('Google Client ID no configurado. Configúralo en Configuración → Sincronización');
+        }
+
+        if (!this.spreadsheetId) {
+            throw new Error('Spreadsheet ID no configurado. Configúralo en Configuración → Sincronización');
+        }
+
+        // Asegurar autenticación
+        await this.ensureAuthenticated();
+
         // Separar records de eliminaciones y upserts
         const deleteRecords = records.filter(r => r._action === 'delete');
         const upsertRecords = records.filter(r => !r._action || r._action !== 'delete');
 
-        console.log(`📤 Enviando ${upsertRecords.length} registros y ${deleteRecords.length} eliminaciones de tipo ${entityType} a Google Sheets...`);
-
-        // Calcular timeout dinámico basado en el tamaño del payload
-        // Base: 60 segundos, máximo 180 segundos
-        // Agregar 2 segundos por cada 10KB de datos para dar más margen
-        const payloadSize = JSON.stringify(upsertRecords).length;
-        const payloadKB = payloadSize / 1024;
-        const additionalTimeout = Math.floor(payloadSize / 5120) * 1000; // 2 segundos por cada 5KB
-        const dynamicTimeout = Math.min(baseTimeout + additionalTimeout, 180000); // Máximo 3 minutos
-        
-        console.log(`⏱️ Timeout configurado: ${Math.round(dynamicTimeout/1000)}s para ${entityType} (payload: ${Math.round(payloadKB)}KB, base: ${baseTimeoutSeconds}s)`);
+        console.log(`📤 Enviando ${upsertRecords.length} registros y ${deleteRecords.length} eliminaciones de tipo ${entityType} a Google Sheets usando API...`);
 
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => {
-                console.warn(`⏱️ Timeout después de ${dynamicTimeout}ms para ${entityType}`);
-                controller.abort();
-            }, dynamicTimeout);
-
-            const payload = {
-                token: this.syncToken,
-                entity_type: entityType,
-                records: upsertRecords, // Solo enviar upserts en records normales
-                deletes: deleteRecords.map(r => ({ // Enviar eliminaciones separadas
-                    id: r.id,
-                    sku: r.sku || null,
-                    branch_id: r.branch_id || null,
-                    deleted_at: r._deleted_at || new Date().toISOString()
-                })),
-                device_id: await this.getDeviceId(),
-                timestamp: new Date().toISOString()
-            };
-
-            console.log('📦 Payload preparado:', {
-                entityType,
-                recordsCount: upsertRecords.length,
-                deletesCount: deleteRecords.length,
-                payloadSize: JSON.stringify(payload).length
-            });
-
-            // SOLUCIÓN: Usar text/plain para evitar preflight request
-            // Google Apps Script tiene problemas con preflight OPTIONS
-            // Usando text/plain hace que la petición sea "simple" y no requiere preflight
-            let response;
-            let responseData = null;
+            const sheetName = this.getSheetName(entityType);
             
+            // Asegurar que la hoja existe
+            await this.getOrCreateSheet(sheetName);
+
+            // Convertir records a filas con el formato correcto
+            const rows = upsertRecords.map(record => this.convertRecordToRow(entityType, record));
+
+            // Obtener headers según el tipo de hoja
+            const headers = this.getSheetHeaders(sheetName);
+
+            // Verificar si la hoja tiene headers
+            let sheetInfo;
             try {
-                // Primero intentar con fetch normal (cors)
-                response = await fetch(this.syncUrl, {
-                    method: 'POST',
-                    mode: 'cors',
-                    headers: {
-                        'Content-Type': 'text/plain;charset=utf-8' // CRÍTICO: text/plain evita preflight
-                    },
-                    body: JSON.stringify(payload),
-                    redirect: 'follow',
-                    signal: controller.signal,
-                    // Agregar keepalive para peticiones grandes
-                    keepalive: true
+                sheetInfo = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${sheetName}!A1:Z1`
                 });
+            } catch (e) {
+                sheetInfo = { result: { values: null } };
+            }
 
-                clearTimeout(timeoutId);
-
-                // Intentar leer la respuesta
-                if (response.ok) {
-                    try {
-                        const text = await response.text();
-                        if (text) {
-                            responseData = JSON.parse(text);
-                            console.log('✅ Respuesta de Google Sheets:', responseData);
+            let startRow = 1;
+            let hasHeaders = false;
+            
+            if (!sheetInfo.result.values || sheetInfo.result.values.length === 0 || !sheetInfo.result.values[0] || sheetInfo.result.values[0].length === 0) {
+                // Escribir headers si no existen
+                if (headers.length > 0) {
+                    await gapi.client.sheets.spreadsheets.values.update({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `${sheetName}!A1`,
+                        valueInputOption: 'RAW',
+                        resource: {
+                            values: [headers]
                         }
-                    } catch (parseError) {
-                        console.warn('⚠️ No se pudo parsear la respuesta, pero la petición fue exitosa:', parseError);
-                    }
-                    
-                    if (responseData && responseData.success === false) {
-                        throw new Error(responseData.error || 'Error desconocido desde Google Sheets');
-                    }
-                    
-                    return { 
-                        success: true, 
-                        message: responseData?.message || 'Datos enviados a Google Sheets',
-                        data: responseData
-                    };
-                } else {
-                    const errorText = await response.text().catch(() => 'Error desconocido');
-                    throw new Error(`Error HTTP ${response.status}: ${errorText}`);
-                }
-            } catch (corsError) {
-                // Si falla CORS, verificar si es un error de red o de CORS
-                console.warn('⚠️ Error con CORS:', corsError.message);
-                
-                // Si es un AbortError (timeout), no intentar con no-cors
-                if (corsError.name === 'AbortError') {
-                    clearTimeout(timeoutId);
-                    throw corsError;
-                }
-                
-                // Si es un error de CORS real, intentar con no-cors como último recurso
-                // PERO: no-cors no permite leer la respuesta, así que no podemos verificar si funcionó
-                console.warn('⚠️ Intentando con no-cors como último recurso...');
-                
-                clearTimeout(timeoutId);
-                const noCorsController = new AbortController();
-                const noCorsTimeoutId = setTimeout(() => {
-                    console.warn(`⏱️ Timeout no-cors después de ${dynamicTimeout}ms`);
-                    noCorsController.abort();
-                }, dynamicTimeout);
-                
-                try {
-                    // Con no-cors, no podemos leer la respuesta, pero podemos intentar enviar
-                    const noCorsResponse = await fetch(this.syncUrl, {
-                        method: 'POST',
-                        mode: 'no-cors', // Fallback: no-cors
-                        headers: {
-                            'Content-Type': 'text/plain;charset=utf-8'
-                        },
-                        body: JSON.stringify(payload),
-                        redirect: 'follow',
-                        signal: noCorsController.signal,
-                        keepalive: true
                     });
-
-                    clearTimeout(noCorsTimeoutId);
-                    
-                    // Con no-cors, la respuesta siempre es "opaque" y no podemos leerla
-                    // Esto significa que NO podemos verificar si los datos se enviaron correctamente
-                    console.error('❌ FALLO CRÍTICO: no-cors no permite verificar si los datos se enviaron');
-                    console.error('❌ La respuesta es "opaque" y no podemos leer el estado');
-                    
-                    // CRÍTICO: no-cors NO es confiable para Google Apps Script
-                    // Los datos PUEDEN haberse enviado, pero no podemos verificarlo
-                    // NO marcar como exitoso - marcar como error para que se reintente
-                    return { 
-                        success: false, 
-                        error: 'CORS bloqueado: No se pudo verificar si los datos se enviaron. Google Apps Script debe estar configurado con CORS. ACTUALIZA el Google Apps Script con doOptions() y headers CORS, luego vuelve a desplegar la aplicación web.',
-                        corsBlocked: true,
-                        requiresAction: 'Necesitas actualizar Google Apps Script y configurar CORS correctamente'
-                    };
-                } catch (noCorsError) {
-                    clearTimeout(noCorsTimeoutId);
-                    // Si no-cors también falla, lanzar el error original de CORS
-                    throw corsError;
+                }
+                startRow = 2;
+            } else {
+                hasHeaders = true;
+                // Buscar última fila con datos
+                try {
+                    const allData = await gapi.client.sheets.spreadsheets.values.get({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `${sheetName}!A:Z`
+                    });
+                    startRow = (allData.result.values?.length || 1) + 1;
+                } catch (e) {
+                    startRow = 2; // Si hay headers, empezar en fila 2
                 }
             }
+
+            // Para sales, también necesitamos escribir items y payments
+            if (entityType === 'sale' && rows.length > 0) {
+                // Escribir ventas
+                await this.writeSalesData(upsertRecords, startRow);
+            } else if (rows.length > 0) {
+                // Escribir datos normales
+                await gapi.client.sheets.spreadsheets.values.append({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${sheetName}!A${startRow}`,
+                    valueInputOption: 'RAW',
+                    insertDataOption: 'INSERT_ROWS',
+                    resource: {
+                        values: rows
+                    }
+                });
+            }
+
+            console.log(`✅ ${upsertRecords.length} registros escritos en hoja ${sheetName}`);
+
+            return { 
+                success: true, 
+                message: `${upsertRecords.length} registros de ${entityType} sincronizados exitosamente`,
+                added: upsertRecords.length,
+                updated: 0
+            };
         } catch (e) {
-            console.error('❌ Error enviando a Google Sheets:', e);
-            if (e.name === 'AbortError') {
-                return { 
-                    success: false, 
-                    error: `Timeout: La sincronización tardó demasiado (más de ${Math.round(dynamicTimeout/1000)} segundos). Intenta aumentar el timeout en configuración o reducir el tamaño del lote.`,
-                    timeout: true
-                };
+            console.error('❌ Error enviando a Google Sheets API:', e);
+            return { 
+                success: false, 
+                error: e.message || 'Error desconocido al escribir en Google Sheets'
+            };
+        }
+    },
+
+    async writeSalesData(salesRecords, startRow) {
+        // Escribir ventas y sus items/payments asociados
+        for (let i = 0; i < salesRecords.length; i++) {
+            const sale = salesRecords[i];
+            const saleRow = this.convertRecordToRow('sale', sale);
+            
+            // Buscar si ya existe esta venta (por folio)
+            try {
+                const existingData = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range: 'SALES!B:B'
+                });
+                
+                let existingRow = null;
+                if (existingData.result.values) {
+                    for (let rowIdx = 0; rowIdx < existingData.result.values.length; rowIdx++) {
+                        if (existingData.result.values[rowIdx][0] === sale.folio) {
+                            existingRow = rowIdx + 1; // +1 porque es índice base 1
+                            break;
+                        }
+                    }
+                }
+                
+                if (existingRow) {
+                    // Actualizar venta existente
+                    await gapi.client.sheets.spreadsheets.values.update({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `SALES!A${existingRow}`,
+                        valueInputOption: 'RAW',
+                        resource: {
+                            values: [saleRow]
+                        }
+                    });
+                } else {
+                    // Agregar nueva venta
+                    await gapi.client.sheets.spreadsheets.values.append({
+                        spreadsheetId: this.spreadsheetId,
+                        range: `SALES!A${startRow + i}`,
+                        valueInputOption: 'RAW',
+                        insertDataOption: 'INSERT_ROWS',
+                        resource: {
+                            values: [saleRow]
+                        }
+                    });
+                }
+            } catch (e) {
+                console.warn('Error buscando venta existente, agregando como nueva:', e);
+                await gapi.client.sheets.spreadsheets.values.append({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `SALES!A${startRow + i}`,
+                    valueInputOption: 'RAW',
+                    insertDataOption: 'INSERT_ROWS',
+                    resource: {
+                        values: [saleRow]
+                    }
+                });
             }
-            // Si es un error de red, puede ser CORS o conexión
-            if (e.message && (e.message.includes('Failed to fetch') || e.message.includes('NetworkError'))) {
-                return { 
-                    success: false, 
-                    error: 'Error de red: No se pudo conectar con Google Apps Script. Verifica que la URL esté correcta y que el script esté desplegado.',
-                    networkError: true
-                };
+            
+            // Escribir items si existen
+            if (sale.items && Array.isArray(sale.items) && sale.items.length > 0) {
+                await this.getOrCreateSheet('ITEMS');
+                const itemsRows = sale.items.map(item => [
+                    item.id,
+                    sale.id, // sale_id
+                    item.item_id,
+                    item.quantity || 1,
+                    item.price || 0,
+                    item.cost || 0,
+                    item.discount || 0,
+                    item.subtotal || 0,
+                    item.commission_amount || 0,
+                    item.created_at || ''
+                ]);
+                
+                const itemsData = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range: 'ITEMS!A:Z'
+                });
+                const itemsStartRow = (itemsData.result.values?.length || 1) + 1;
+                
+                await gapi.client.sheets.spreadsheets.values.append({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `ITEMS!A${itemsStartRow}`,
+                    valueInputOption: 'RAW',
+                    insertDataOption: 'INSERT_ROWS',
+                    resource: {
+                        values: itemsRows
+                    }
+                });
             }
-            return { success: false, error: e.message || 'Error desconocido' };
+            
+            // Escribir payments si existen
+            if (sale.payments && Array.isArray(sale.payments) && sale.payments.length > 0) {
+                await this.getOrCreateSheet('PAYMENTS');
+                const paymentsRows = sale.payments.map(payment => [
+                    payment.id,
+                    sale.id, // sale_id
+                    payment.method_id || '',
+                    payment.amount || 0,
+                    payment.currency || 'MXN',
+                    payment.bank || '',
+                    payment.payment_type || '',
+                    payment.bank_commission || 0,
+                    payment.created_at || ''
+                ]);
+                
+                const paymentsData = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range: 'PAYMENTS!A:Z'
+                });
+                const paymentsStartRow = (paymentsData.result.values?.length || 1) + 1;
+                
+                await gapi.client.sheets.spreadsheets.values.append({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `PAYMENTS!A${paymentsStartRow}`,
+                    valueInputOption: 'RAW',
+                    insertDataOption: 'INSERT_ROWS',
+                    resource: {
+                        values: paymentsRows
+                    }
+                });
+            }
         }
     },
 
@@ -898,7 +1423,9 @@ const SyncManager = {
             retryFailed: settingsMap.sync_retry_failed !== 'false',
             notifyErrors: settingsMap.sync_notify_errors !== 'false',
             maxRetries: parseInt(settingsMap.sync_max_retries || 5),
-            entityFilters: JSON.parse(settingsMap.sync_entity_filters || '{}')
+            entityFilters: JSON.parse(settingsMap.sync_entity_filters || '{}'),
+            googleClientId: settingsMap.google_client_id || '',
+            spreadsheetId: settingsMap.google_sheets_spreadsheet_id || ''
         };
     },
 
@@ -906,15 +1433,46 @@ const SyncManager = {
         const autoSync = document.getElementById('sync-auto-frequency')?.value || 'disabled';
         const batchSize = parseInt(document.getElementById('sync-batch-size')?.value || 50);
         const timeout = parseInt(document.getElementById('sync-timeout')?.value || 60);
+        const googleClientId = document.getElementById('google-client-id')?.value || '';
+        const spreadsheetId = document.getElementById('google-spreadsheet-id')?.value || '';
 
         await DB.put('settings', { key: 'auto_sync', value: autoSync, updated_at: new Date().toISOString() });
         await DB.put('settings', { key: 'sync_batch_size', value: batchSize, updated_at: new Date().toISOString() });
         await DB.put('settings', { key: 'sync_timeout', value: timeout, updated_at: new Date().toISOString() });
+        
+        if (googleClientId) {
+            await DB.put('settings', { key: 'google_client_id', value: googleClientId, updated_at: new Date().toISOString() });
+            this.googleClientId = googleClientId;
+            // Reinicializar Google API con el nuevo client ID
+            if (this.gapiLoaded) {
+                await this.initGoogleAPI();
+            }
+        }
+        
+        if (spreadsheetId) {
+            await DB.put('settings', { key: 'google_sheets_spreadsheet_id', value: spreadsheetId, updated_at: new Date().toISOString() });
+            this.spreadsheetId = spreadsheetId;
+        }
 
         // Reconfigurar auto-sync
         await this.setupAutoSync();
 
         Utils.showNotification('Configuración guardada', 'success');
+    },
+
+    async testGoogleAuth() {
+        try {
+            if (!this.googleClientId) {
+                Utils.showNotification('Primero configura el Google Client ID', 'error');
+                return;
+            }
+            Utils.showNotification('Autenticando con Google...', 'info');
+            await this.authenticate();
+            Utils.showNotification('✅ Autenticación exitosa con Google Sheets', 'success');
+        } catch (error) {
+            console.error('Error en autenticación:', error);
+            Utils.showNotification(`Error de autenticación: ${error.message}`, 'error');
+        }
     },
 
     async saveEntityFilters() {
