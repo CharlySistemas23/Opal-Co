@@ -68,6 +68,11 @@ const SyncManager = {
 
     async addToQueue(entityType, entityId, action = 'upsert') {
         try {
+            // Verificar que SyncManager esté inicializado
+            if (!this.syncUrl && !this.syncToken) {
+                console.warn('⚠️ SyncManager no está configurado, pero agregando a cola de todas formas');
+            }
+            
             const queueItem = {
                 id: Utils.generateId(),
                 entity_type: entityType,
@@ -78,14 +83,27 @@ const SyncManager = {
                 last_attempt: null,
                 created_at: new Date().toISOString()
             };
+            
+            console.log(`➕ Agregando a cola de sincronización: ${entityType} ${entityId.substring(0, 20)}...`);
+            
             await DB.add('sync_queue', queueItem);
+            
+            // Verificar que se guardó correctamente
+            const saved = await DB.get('sync_queue', queueItem.id);
+            if (!saved) {
+                console.error('❌ Error: El elemento no se guardó en la cola');
+                throw new Error('No se pudo guardar el elemento en la cola de sincronización');
+            }
+            
+            console.log(`✅ Agregado a cola exitosamente: ${queueItem.id}`);
             
             // Log
             await this.addLog('info', `Agregado a cola: ${entityType} ${entityId.substring(0, 20)}`, 'pending');
             
             return queueItem.id;
         } catch (e) {
-            console.error('Error adding to sync queue:', e);
+            console.error('❌ Error adding to sync queue:', e);
+            console.error('Stack:', e.stack);
             await this.addLog('error', `Error agregando a cola: ${e.message}`, 'failed');
             throw e;
         }
@@ -152,9 +170,68 @@ const SyncManager = {
             const batchSize = settings.batchSize || 50;
             const maxRetries = settings.maxRetries || 5;
 
-            let pending = await DB.query('sync_queue', 'status', 'pending');
+            // DIAGNÓSTICO: Obtener TODOS los elementos de la cola para ver qué hay
+            const allQueueItems = await DB.getAll('sync_queue') || [];
+            console.log(`📊 DIAGNÓSTICO: Total de elementos en cola: ${allQueueItems.length}`);
             
-            console.log(`📋 Elementos pendientes en cola: ${pending.length}`);
+            // Agrupar por status para diagnóstico
+            const byStatus = {};
+            const byType = {};
+            allQueueItems.forEach(item => {
+                const status = item.status || 'unknown';
+                const type = item.entity_type || 'unknown';
+                if (!byStatus[status]) {
+                    byStatus[status] = [];
+                }
+                if (!byType[type]) {
+                    byType[type] = [];
+                }
+                byStatus[status].push(item);
+                byType[type].push(item);
+            });
+            
+            console.log('📊 Elementos por status:', Object.entries(byStatus).map(([s, items]) => 
+                `${s}: ${items.length}`
+            ).join(', '));
+            console.log('📊 Elementos por tipo:', Object.entries(byType).map(([t, items]) => 
+                `${t}: ${items.length}`
+            ).join(', '));
+            
+            // Intentar obtener pendientes con query
+            let pending = [];
+            try {
+                pending = await DB.query('sync_queue', 'status', 'pending') || [];
+                console.log(`📋 Elementos pendientes (query): ${pending.length}`);
+            } catch (queryError) {
+                console.warn('⚠️ Error en query, usando getAll y filtrando:', queryError);
+                // Fallback: obtener todos y filtrar manualmente
+                pending = allQueueItems.filter(item => (item.status || 'pending') === 'pending');
+                console.log(`📋 Elementos pendientes (fallback): ${pending.length}`);
+            }
+            
+            // Si no hay pendientes, mostrar información detallada
+            if (pending.length === 0) {
+                if (allQueueItems.length > 0) {
+                    const statusDetails = Object.entries(byStatus).map(([status, items]) => 
+                        `${status}: ${items.length}`
+                    ).join(', ');
+                    console.warn(`⚠️ Hay ${allQueueItems.length} elementos en la cola pero ninguno está pendiente`);
+                    console.warn(`   Estados: ${statusDetails}`);
+                    Utils.showNotification(
+                        `No hay elementos pendientes. Cola: ${allQueueItems.length} elementos (${statusDetails})`, 
+                        'warning'
+                    );
+                } else {
+                    console.log('ℹ️ La cola está completamente vacía - no se han agregado elementos para sincronizar');
+                    Utils.showNotification(
+                        'No hay elementos pendientes de sincronizar. Los datos se agregan automáticamente cuando creas ventas, inventario, etc.', 
+                        'info'
+                    );
+                }
+                this.isSyncing = false;
+                UI.updateSyncStatus(this.isOnline, false);
+                return;
+            }
             
             // Aplicar filtros de entidad
             if (Object.keys(entityFilters).length > 0) {
@@ -164,8 +241,8 @@ const SyncManager = {
             }
             
             if (pending.length === 0) {
-                console.log('ℹ️ No hay elementos pendientes de sincronizar');
-                Utils.showNotification('No hay elementos pendientes de sincronizar', 'info');
+                console.log('ℹ️ Todos los elementos pendientes fueron filtrados');
+                Utils.showNotification('No hay elementos pendientes de sincronizar (filtrados)', 'info');
                 this.isSyncing = false;
                 UI.updateSyncStatus(this.isOnline, false);
                 return;
@@ -779,6 +856,112 @@ const SyncManager = {
 
     async sync() {
         return await this.syncNow();
+    },
+    
+    // Función de diagnóstico para verificar el estado de la cola
+    async diagnoseQueue() {
+        try {
+            const allItems = await DB.getAll('sync_queue') || [];
+            const byStatus = {};
+            const byType = {};
+            
+            allItems.forEach(item => {
+                const status = item.status || 'unknown';
+                const type = item.entity_type || 'unknown';
+                if (!byStatus[status]) byStatus[status] = [];
+                if (!byType[type]) byType[type] = [];
+                byStatus[status].push(item);
+                byType[type].push(item);
+            });
+            
+            const diagnosis = {
+                total: allItems.length,
+                byStatus: Object.fromEntries(Object.entries(byStatus).map(([s, items]) => [s, items.length])),
+                byType: Object.fromEntries(Object.entries(byType).map(([t, items]) => [t, items.length])),
+                pending: byStatus.pending?.length || 0,
+                synced: byStatus.synced?.length || 0,
+                failed: byStatus.failed?.length || 0,
+                recentPending: byStatus.pending?.slice(-10).map(i => ({
+                    type: i.entity_type,
+                    id: i.entity_id?.substring(0, 20),
+                    created: i.created_at
+                })) || []
+            };
+            
+            console.log('🔍 DIAGNÓSTICO DE COLA DE SINCRONIZACIÓN:', diagnosis);
+            return diagnosis;
+        } catch (e) {
+            console.error('Error en diagnóstico:', e);
+            return { error: e.message };
+        }
+    },
+    
+    // Función para forzar re-agregar elementos a la cola (útil si se perdieron)
+    async forceRequeueEntityType(entityType, limit = 100) {
+        try {
+            console.log(`🔄 Forzando re-agregar ${entityType} a la cola...`);
+            
+            let records = [];
+            switch (entityType) {
+                case 'sale':
+                    records = await DB.getAll('sales') || [];
+                    break;
+                case 'inventory_item':
+                    records = await DB.getAll('inventory_items') || [];
+                    break;
+                case 'customer':
+                    records = await DB.getAll('customers') || [];
+                    break;
+                case 'employee':
+                    records = await DB.getAll('employees') || [];
+                    break;
+                case 'repair':
+                    records = await DB.getAll('repairs') || [];
+                    break;
+                case 'cost_entry':
+                    records = await DB.getAll('cost_entries') || [];
+                    break;
+                default:
+                    throw new Error(`Tipo de entidad no soportado: ${entityType}`);
+            }
+            
+            // Limitar cantidad
+            records = records.slice(0, limit);
+            
+            console.log(`📦 Encontrados ${records.length} registros de ${entityType}`);
+            
+            let added = 0;
+            let errors = 0;
+            
+            for (const record of records) {
+                try {
+                    // Verificar si ya está en la cola
+                    const existing = await DB.getAll('sync_queue') || [];
+                    const alreadyInQueue = existing.some(item => 
+                        item.entity_type === entityType && 
+                        item.entity_id === record.id &&
+                        item.status === 'pending'
+                    );
+                    
+                    if (!alreadyInQueue) {
+                        await this.addToQueue(entityType, record.id);
+                        added++;
+                    }
+                } catch (e) {
+                    console.error(`Error agregando ${record.id}:`, e);
+                    errors++;
+                }
+            }
+            
+            console.log(`✅ Re-agregados ${added} elementos, ${errors} errores`);
+            Utils.showNotification(`Re-agregados ${added} elementos de ${entityType} a la cola`, 'success');
+            
+            return { added, errors, total: records.length };
+        } catch (e) {
+            console.error('Error en forceRequeueEntityType:', e);
+            Utils.showNotification(`Error: ${e.message}`, 'error');
+            throw e;
+        }
     }
 };
 
