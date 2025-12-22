@@ -91,43 +91,15 @@ const UI = {
                         return;
                     }
                     
-                    // Toggle de la clase collapsed
-                    const wasCollapsed = header.classList.contains('collapsed');
+                    // Toggle simple de la clase collapsed - el CSS se encarga del resto
+                    header.classList.toggle('collapsed');
+                    const isCollapsed = header.classList.contains('collapsed');
                     
-                    if (!wasCollapsed) {
-                        // Va a colapsar
-                        const currentHeight = items.scrollHeight || items.offsetHeight;
-                        items.style.maxHeight = currentHeight + 'px';
-                        // Forzar reflow
-                        void items.offsetHeight;
-                        // Ahora colapsar
-                        header.classList.add('collapsed');
-                        items.style.maxHeight = '0px';
-                    } else {
-                        // Va a expandir
-                        header.classList.remove('collapsed');
-                        // Quitar restricción temporalmente para medir
-                        items.style.maxHeight = 'none';
-                        items.style.opacity = '1';
-                        // Forzar reflow
-                        void items.offsetHeight;
-                        const realHeight = items.scrollHeight || items.offsetHeight;
-                        // Establecer a 0 primero
-                        items.style.maxHeight = '0px';
-                        // Forzar otro reflow
-                        void items.offsetHeight;
-                        // Ahora animar hasta la altura real
-                        items.style.maxHeight = realHeight + 'px';
-                        // Después de la animación, mantener el max-height
-                        setTimeout(() => {
-                            if (!header.classList.contains('collapsed')) {
-                                // Mantener el max-height para que el contenido sea visible
-                                items.style.maxHeight = realHeight + 'px';
-                            }
-                        }, 350);
+                    // Limpiar cualquier estilo inline que pueda interferir
+                    if (!isCollapsed) {
+                        items.style.maxHeight = '';
+                        items.style.opacity = '';
                     }
-                    
-                    const isCollapsed = !wasCollapsed;
                     
                     // Guardar estado
                     this.saveSectionState(section, isCollapsed);
@@ -213,16 +185,13 @@ const UI = {
                 
                 if (isCollapsed) {
                     header.classList.add('collapsed');
-                    items.style.maxHeight = '0px';
-                    items.style.opacity = '0';
                 } else {
                     header.classList.remove('collapsed');
-                    // Medir altura real sin restricciones
-                    items.style.maxHeight = 'none';
-                    items.style.opacity = '1';
-                    const realHeight = items.scrollHeight || items.offsetHeight;
-                    items.style.maxHeight = realHeight + 'px';
                 }
+                
+                // Limpiar estilos inline
+                items.style.maxHeight = '';
+                items.style.opacity = '';
             });
             
             // Después de aplicar estados, habilitar transiciones
