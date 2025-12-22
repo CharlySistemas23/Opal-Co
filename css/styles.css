@@ -511,11 +511,18 @@ body {
     transition: max-height 0.3s ease, opacity 0.3s ease;
     opacity: 1;
     display: block;
+    max-height: 0;
+}
+
+.nav-section-header:not(.collapsed) + .nav-section-items {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .nav-section-header.collapsed + .nav-section-items {
     opacity: 0;
     pointer-events: none;
+    max-height: 0 !important;
 }
 
 .nav-section-items .nav-item {
