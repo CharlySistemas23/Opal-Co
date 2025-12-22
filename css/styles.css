@@ -507,17 +507,25 @@ body {
 }
 
 .nav-section-items {
-    overflow: hidden;
-    transition: max-height 0.3s ease, opacity 0.3s ease;
-    max-height: 2000px;
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.3s ease, opacity 0.3s ease;
     opacity: 1;
-    display: block;
+    overflow: hidden;
 }
 
 .nav-section-header.collapsed + .nav-section-items {
-    max-height: 0 !important;
+    grid-template-rows: 0fr;
     opacity: 0;
     pointer-events: none;
+}
+
+/* Wrapper interno para los items (creado por JavaScript) */
+.nav-items-wrapper {
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .nav-section-items .nav-item {
