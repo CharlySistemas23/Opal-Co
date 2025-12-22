@@ -70,10 +70,6 @@ const UI = {
             });
         });
 
-        // Crear wrappers internos para CSS Grid (Solución 4) PRIMERO
-        // Esto debe hacerse antes de configurar eventos y estados
-        this.createGridWrappers();
-        
         // Configurar secciones colapsables - Usar event delegation en el sidebar
         const sidebarNav = document.querySelector('.sidebar-nav');
         if (sidebarNav) {
@@ -95,8 +91,37 @@ const UI = {
                         return;
                     }
                     
-                    // Toggle de la clase collapsed - el CSS se encarga de la animación
-                    header.classList.toggle('collapsed');
+                    // Solución 1: Medir altura antes de colapsar
+                    const wasCollapsed = header.classList.contains('collapsed');
+                    
+                    if (!wasCollapsed) {
+                        // Va a colapsar - medir altura actual
+                        const currentHeight = items.scrollHeight;
+                        items.style.maxHeight = currentHeight + 'px';
+                        // Forzar reflow
+                        void items.offsetHeight;
+                        // Ahora colapsar
+                        header.classList.add('collapsed');
+                        items.style.maxHeight = '0px';
+                    } else {
+                        // Va a expandir - primero quitar restricción para medir
+                        header.classList.remove('collapsed');
+                        items.style.maxHeight = 'none';
+                        // Forzar reflow para que el navegador calcule la altura real
+                        void items.offsetHeight;
+                        const realHeight = items.scrollHeight;
+                        // Ahora animar desde 0 hasta la altura real
+                        items.style.maxHeight = '0px';
+                        void items.offsetHeight;
+                        items.style.maxHeight = realHeight + 'px';
+                        // Después de la animación, remover el max-height para que sea automático
+                        setTimeout(() => {
+                            if (!header.classList.contains('collapsed')) {
+                                items.style.maxHeight = '';
+                            }
+                        }, 300);
+                    }
+                    
                     const isCollapsed = header.classList.contains('collapsed');
                     
                     // Guardar estado
@@ -112,39 +137,6 @@ const UI = {
         }, 100);
     },
 
-    createGridWrappers() {
-        // Crear wrappers internos para que CSS Grid funcione correctamente
-        // Esto es necesario para la Solución 4 (CSS Grid)
-        document.querySelectorAll('.nav-section-items').forEach(items => {
-            // Verificar si ya tiene wrapper
-            if (items.querySelector('.nav-items-wrapper')) {
-                return;
-            }
-            
-            // Obtener todos los nav-items (excluyendo el wrapper si existe)
-            const navItems = Array.from(items.children).filter(child => 
-                child.classList.contains('nav-item')
-            );
-            
-            // Si no hay items, no crear wrapper
-            if (navItems.length === 0) {
-                return;
-            }
-            
-            // Crear wrapper interno
-            const wrapper = document.createElement('div');
-            wrapper.className = 'nav-items-wrapper';
-            
-            // Mover todos los nav-items al wrapper
-            navItems.forEach(item => {
-                wrapper.appendChild(item);
-            });
-            
-            // Agregar el wrapper al contenedor
-            items.appendChild(wrapper);
-        });
-    },
-
     loadSectionStates() {
         try {
             // Verificar que los elementos existan en el DOM
@@ -153,17 +145,6 @@ const UI = {
                 console.warn('No se encontraron headers de sección, reintentando...');
                 setTimeout(() => this.loadSectionStates(), 200);
                 return;
-            }
-            
-            // Verificar que los wrappers estén creados
-            const allItems = document.querySelectorAll('.nav-section-items');
-            const itemsWithoutWrapper = Array.from(allItems).filter(items => 
-                !items.querySelector('.nav-items-wrapper')
-            );
-            
-            // Si faltan wrappers, crearlos
-            if (itemsWithoutWrapper.length > 0) {
-                this.createGridWrappers();
             }
 
             // Mapeo de módulos a secciones
@@ -212,23 +193,35 @@ const UI = {
                 const section = header.dataset.section;
                 if (!section) return;
                 
+                const items = header.nextElementSibling;
+                if (!items || !items.classList.contains('nav-section-items')) {
+                    return;
+                }
+                
                 // Si hay un estado guardado, usarlo; si no, usar el estado por defecto
                 const isCollapsed = states.hasOwnProperty(section) 
                     ? states[section] 
                     : (section !== sectionToExpand); // Por defecto, colapsar todas excepto la activa
                 
-                // Aplicar la clase collapsed SIN animación inicial (para evitar el "flash")
+                // Aplicar estado SIN animación inicial (para evitar el "flash")
                 if (isCollapsed) {
                     header.classList.add('collapsed');
+                    items.style.maxHeight = '0px';
+                    items.style.transition = 'none';
                 } else {
                     header.classList.remove('collapsed');
+                    // Medir altura real sin restricciones
+                    items.style.maxHeight = 'none';
+                    const realHeight = items.scrollHeight;
+                    items.style.maxHeight = realHeight + 'px';
+                    items.style.transition = 'none';
                 }
             });
             
             // Después de aplicar estados, habilitar transiciones
             setTimeout(() => {
                 document.querySelectorAll('.nav-section-items').forEach(items => {
-                    items.classList.add('transition-enabled');
+                    items.style.transition = 'max-height 0.3s ease, opacity 0.3s ease';
                 });
             }, 50);
 
