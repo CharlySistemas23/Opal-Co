@@ -70,42 +70,8 @@ const UI = {
             });
         });
 
-        // Configurar secciones colapsables - Usar event delegation en el sidebar
-        const sidebarNav = document.querySelector('.sidebar-nav');
-        if (sidebarNav) {
-            sidebarNav.addEventListener('click', (e) => {
-                // Verificar si el click fue en un header o en sus hijos, pero no en un nav-item
-                const header = e.target.closest('.nav-section-header');
-                const navItem = e.target.closest('.nav-item');
-                
-                // Si se hizo clic en un header (o sus hijos como iconos, labels, chevron) pero NO en un nav-item
-                if (header && !navItem) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const section = header.dataset.section;
-                    if (!section) return;
-                    
-                    // Asegurar que el elemento items existe
-                    const items = header.nextElementSibling;
-                    if (!items || !items.classList.contains('nav-section-items')) {
-                        return;
-                    }
-                    
-                    // Toggle simple de la clase collapsed - el CSS se encarga del resto
-                    header.classList.toggle('collapsed');
-                    const isCollapsed = header.classList.contains('collapsed');
-                    
-                    // Limpiar cualquier estilo inline que pueda interferir
-                    if (!isCollapsed) {
-                        items.style.maxHeight = '';
-                        items.style.opacity = '';
-                    }
-                    
-                    // Guardar estado
-                    this.saveSectionState(section, isCollapsed);
-                }
-            });
-        }
+        // Deshabilitar funcionalidad de colapsar - todos los módulos siempre visibles
+        // No configurar event listeners para colapsar/expandir
         
         // Cargar estado guardado de secciones colapsables DESPUÉS de crear wrappers y configurar eventos
         // Usar setTimeout para asegurar que el DOM esté completamente renderizado
@@ -165,7 +131,7 @@ const UI = {
                 }
             }
 
-            // Aplicar estados a cada sección
+            // Asegurar que TODOS los módulos estén siempre desplegados
             headers.forEach((header) => {
                 const section = header.dataset.section;
                 if (!section) return;
@@ -175,31 +141,17 @@ const UI = {
                     return;
                 }
                 
-                // Si hay un estado guardado, usarlo; si no, usar el estado por defecto
-                const isCollapsed = states.hasOwnProperty(section) 
-                    ? states[section] 
-                    : (section !== sectionToExpand); // Por defecto, colapsar todas excepto la activa
+                // SIEMPRE remover collapsed y asegurar visibilidad
+                header.classList.remove('collapsed');
                 
-                // Aplicar estado SIN animación inicial (para evitar el "flash")
-                items.style.transition = 'none';
-                
-                if (isCollapsed) {
-                    header.classList.add('collapsed');
-                } else {
-                    header.classList.remove('collapsed');
-                }
-                
-                // Limpiar estilos inline
+                // Asegurar que estén visibles con !important
+                items.style.display = 'block';
+                items.style.opacity = '1';
+                items.style.height = '';
                 items.style.maxHeight = '';
-                items.style.opacity = '';
+                items.style.transform = '';
+                items.style.transition = '';
             });
-            
-            // Después de aplicar estados, habilitar transiciones
-            setTimeout(() => {
-                document.querySelectorAll('.nav-section-items').forEach(items => {
-                    items.style.transition = 'max-height 0.3s ease, opacity 0.3s ease';
-                });
-            }, 100);
 
         } catch (e) {
             console.error('Error loading section states:', e);
@@ -210,9 +162,13 @@ const UI = {
     expandSection(sectionName) {
         const header = document.querySelector(`.nav-section-header[data-section="${sectionName}"]`);
         if (header) {
-            // Simplemente remover la clase collapsed - el CSS se encarga del resto
+            // Asegurar que esté siempre desplegado
             header.classList.remove('collapsed');
-            // No guardar este estado automático (no llamar a saveSectionState)
+            const items = header.nextElementSibling;
+            if (items && items.classList.contains('nav-section-items')) {
+                items.style.display = 'block';
+                items.style.opacity = '1';
+            }
         }
     },
 
