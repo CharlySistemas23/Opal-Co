@@ -84,37 +84,9 @@ const UI = {
                     const section = header.dataset.section;
                     if (!section) return;
                     
-                    // Obtener el elemento de items
-                    const items = header.nextElementSibling;
-                    if (!items || !items.classList.contains('nav-section-items')) {
-                        return;
-                    }
-                    
-                    // Toggle de la clase collapsed
-                    const wasCollapsed = header.classList.contains('collapsed');
+                    // Toggle de la clase collapsed - el CSS se encarga de la animación
                     header.classList.toggle('collapsed');
                     const isCollapsed = header.classList.contains('collapsed');
-                    
-                    // Forzar el cálculo del max-height para la animación
-                    if (!wasCollapsed && isCollapsed) {
-                        // Colapsar
-                        items.style.maxHeight = items.scrollHeight + 'px';
-                        // Forzar reflow
-                        void items.offsetHeight;
-                        items.style.maxHeight = '0px';
-                    } else if (wasCollapsed && !isCollapsed) {
-                        // Expandir
-                        items.style.maxHeight = '0px';
-                        // Forzar reflow
-                        void items.offsetHeight;
-                        items.style.maxHeight = items.scrollHeight + 'px';
-                        // Después de la animación, remover el max-height para que sea automático
-                        setTimeout(() => {
-                            if (!header.classList.contains('collapsed')) {
-                                items.style.maxHeight = '';
-                            }
-                        }, 300);
-                    }
                     
                     // Guardar estado
                     this.saveSectionState(section, isCollapsed);
@@ -185,36 +157,17 @@ const UI = {
                 const section = header.dataset.section;
                 if (!section) return;
                 
-                const items = header.nextElementSibling;
-                if (!items || !items.classList.contains('nav-section-items')) {
-                    return;
-                }
-                
                 // Si hay un estado guardado, usarlo; si no, usar el estado por defecto
                 const isCollapsed = states.hasOwnProperty(section) 
                     ? states[section] 
                     : (section !== sectionToExpand); // Por defecto, colapsar todas excepto la activa
                 
-                // Primero establecer el estado inicial sin animación
+                // Aplicar la clase collapsed - el CSS se encarga del resto
                 if (isCollapsed) {
                     header.classList.add('collapsed');
-                    items.style.maxHeight = '0px';
-                    items.style.transition = 'none';
                 } else {
                     header.classList.remove('collapsed');
-                    // Calcular la altura real
-                    const realHeight = items.scrollHeight;
-                    items.style.maxHeight = realHeight + 'px';
-                    items.style.transition = 'none';
                 }
-                
-                // Después de un pequeño delay, restaurar la transición para animaciones futuras
-                setTimeout(() => {
-                    items.style.transition = '';
-                    if (!header.classList.contains('collapsed')) {
-                        items.style.maxHeight = '';
-                    }
-                }, 50);
             });
 
         } catch (e) {
@@ -226,22 +179,8 @@ const UI = {
     expandSection(sectionName) {
         const header = document.querySelector(`.nav-section-header[data-section="${sectionName}"]`);
         if (header) {
-            const items = header.nextElementSibling;
-            if (items && items.classList.contains('nav-section-items')) {
-                // Remover clase collapsed
-                header.classList.remove('collapsed');
-                // Forzar animación de expansión
-                items.style.maxHeight = '0px';
-                // Forzar reflow
-                void items.offsetHeight;
-                items.style.maxHeight = items.scrollHeight + 'px';
-                // Después de la animación, remover el max-height para que sea automático
-                setTimeout(() => {
-                    if (!header.classList.contains('collapsed')) {
-                        items.style.maxHeight = '';
-                    }
-                }, 300);
-            }
+            // Simplemente remover la clase collapsed - el CSS se encarga del resto
+            header.classList.remove('collapsed');
             // No guardar este estado automático (no llamar a saveSectionState)
         }
     },
