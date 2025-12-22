@@ -507,31 +507,15 @@ body {
 }
 
 .nav-section-items {
-    display: grid;
-    grid-template-rows: 1fr;
-    transition: none; /* Sin transición inicial para evitar flash */
-    opacity: 1;
     overflow: hidden;
-}
-
-/* Habilitar transición solo después de la carga inicial */
-.nav-section-items.transition-enabled {
-    transition: grid-template-rows 0.3s ease, opacity 0.3s ease;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+    opacity: 1;
+    display: block;
 }
 
 .nav-section-header.collapsed + .nav-section-items {
-    grid-template-rows: 0fr !important;
     opacity: 0;
     pointer-events: none;
-}
-
-/* Wrapper interno para los items (creado por JavaScript) */
-.nav-items-wrapper {
-    min-height: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    grid-row: 1;
 }
 
 .nav-section-items .nav-item {
