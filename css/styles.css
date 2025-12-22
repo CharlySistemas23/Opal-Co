@@ -513,17 +513,20 @@ body {
 
 .nav-section-items {
     overflow: hidden;
-    transition: max-height 0.3s ease, opacity 0.3s ease, margin-bottom 0.3s ease;
-    max-height: 500px;
+    transition: max-height 0.3s ease, opacity 0.3s ease, margin-bottom 0.3s ease, padding 0.3s ease;
+    max-height: 1000px;
     opacity: 1;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 .nav-section-header.collapsed + .nav-section-items {
     max-height: 0 !important;
     opacity: 0;
     margin-bottom: 0;
-    padding-top: 0;
-    padding-bottom: 0;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    overflow: hidden;
 }
 
 .nav-section-items .nav-item {
