@@ -84,7 +84,23 @@ const UI = {
                     const section = header.dataset.section;
                     if (!section) return;
                     
-                    const isCollapsed = header.classList.toggle('collapsed');
+                    const wasCollapsed = header.classList.contains('collapsed');
+                    const isCollapsed = !wasCollapsed;
+                    
+                    if (isCollapsed) {
+                        header.classList.add('collapsed');
+                        const items = header.nextElementSibling;
+                        if (items && items.classList.contains('nav-section-items')) {
+                            items.style.display = 'none';
+                        }
+                    } else {
+                        header.classList.remove('collapsed');
+                        const items = header.nextElementSibling;
+                        if (items && items.classList.contains('nav-section-items')) {
+                            items.style.display = '';
+                        }
+                    }
+                    
                     this.saveSectionState(section, isCollapsed);
                 }
             });
@@ -99,7 +115,23 @@ const UI = {
                     const section = header.dataset.section;
                     if (!section) return;
                     
-                    const isCollapsed = header.classList.toggle('collapsed');
+                    const wasCollapsed = header.classList.contains('collapsed');
+                    const isCollapsed = !wasCollapsed;
+                    
+                    if (isCollapsed) {
+                        header.classList.add('collapsed');
+                        const items = header.nextElementSibling;
+                        if (items && items.classList.contains('nav-section-items')) {
+                            items.style.display = 'none';
+                        }
+                    } else {
+                        header.classList.remove('collapsed');
+                        const items = header.nextElementSibling;
+                        if (items && items.classList.contains('nav-section-items')) {
+                            items.style.display = '';
+                        }
+                    }
+                    
                     this.saveSectionState(section, isCollapsed);
                 });
             });
@@ -141,31 +173,31 @@ const UI = {
                 'qa': 'sistema'
             };
 
-            // PRIMERO: Colapsar TODAS las secciones por defecto (forzar)
+            // PRIMERO: Colapsar TODAS las secciones sin excepción
             headers.forEach(header => {
                 const section = header.dataset.section;
                 if (section) {
+                    // Forzar clase collapsed
                     header.classList.add('collapsed');
-                    // Asegurar que el CSS se aplique inmediatamente
+                    // Aplicar estilos inline para forzar el colapso
                     const items = header.nextElementSibling;
                     if (items && items.classList.contains('nav-section-items')) {
-                        items.style.maxHeight = '0';
-                        items.style.opacity = '0';
+                        items.style.display = 'none'; // Ocultar completamente
                     }
                 }
             });
 
-            // Pequeño delay para asegurar que el CSS se aplique
+            // Pequeño delay para que se apliquen los estilos
             setTimeout(() => {
-                // SEGUNDO: Determinar qué sección debe estar desplegada (solo la del módulo activo)
+                // SEGUNDO: Determinar qué sección debe estar desplegada
                 let sectionToExpand = null;
                 
-                // Verificar si hay un módulo actual guardado
+                // Buscar módulo activo
                 const currentModule = localStorage.getItem('current_module');
                 if (currentModule && moduleToSection[currentModule]) {
                     sectionToExpand = moduleToSection[currentModule];
                 } else {
-                    // Si no hay módulo guardado, buscar el nav-item activo en el DOM
+                    // Buscar nav-item activo en DOM
                     const activeNavItem = document.querySelector('.nav-item.active');
                     if (activeNavItem) {
                         const activeModule = activeNavItem.dataset.module;
@@ -179,7 +211,7 @@ const UI = {
                 if (sectionToExpand) {
                     this.expandSection(sectionToExpand);
                 }
-            }, 50);
+            }, 100);
 
         } catch (e) {
             console.error('Error loading section states:', e);
@@ -194,6 +226,7 @@ const UI = {
             // Restaurar estilos normales del contenedor de items
             const items = header.nextElementSibling;
             if (items && items.classList.contains('nav-section-items')) {
+                items.style.display = ''; // Mostrar el contenedor
                 items.style.maxHeight = '';
                 items.style.opacity = '';
             }
