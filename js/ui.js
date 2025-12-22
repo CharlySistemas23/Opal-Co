@@ -106,11 +106,22 @@ const UI = {
         }, 100);
 
         // Cargar estado guardado de secciones colapsables DESPUÉS de configurar eventos
-        this.loadSectionStates();
+        // Usar setTimeout para asegurar que el DOM esté completamente renderizado
+        setTimeout(() => {
+            this.loadSectionStates();
+        }, 100);
     },
 
     loadSectionStates() {
         try {
+            // Verificar que los elementos existan en el DOM
+            const headers = document.querySelectorAll('.nav-section-header');
+            if (headers.length === 0) {
+                console.warn('No se encontraron headers de sección, reintentando...');
+                setTimeout(() => this.loadSectionStates(), 200);
+                return;
+            }
+
             // Mapeo de módulos a secciones
             const moduleToSection = {
                 'dashboard': 'operaciones',
@@ -130,41 +141,46 @@ const UI = {
                 'qa': 'sistema'
             };
 
-            // Por defecto, todas las secciones empiezan colapsadas
-            document.querySelectorAll('.nav-section-header').forEach(header => {
+            // PRIMERO: Colapsar TODAS las secciones por defecto (forzar)
+            headers.forEach(header => {
                 const section = header.dataset.section;
                 if (section) {
                     header.classList.add('collapsed');
+                    // Asegurar que el CSS se aplique inmediatamente
+                    const items = header.nextElementSibling;
+                    if (items && items.classList.contains('nav-section-items')) {
+                        items.style.maxHeight = '0';
+                        items.style.opacity = '0';
+                    }
                 }
             });
 
-            // Cargar estado guardado (si existe)
-            const savedStates = localStorage.getItem('nav_section_states');
-            if (savedStates) {
-                const states = JSON.parse(savedStates);
-                document.querySelectorAll('.nav-section-header').forEach(header => {
-                    const section = header.dataset.section;
-                    if (section && states[section] === false) {
-                        // Si el estado guardado dice que NO está colapsada, quitar la clase
-                        header.classList.remove('collapsed');
-                    }
-                });
-            }
-
-            // Si hay un módulo actual guardado, desplegar su sección
-            const currentModule = localStorage.getItem('current_module');
-            if (currentModule && moduleToSection[currentModule]) {
-                this.expandSection(moduleToSection[currentModule]);
-            } else {
-                // Si no hay módulo guardado, buscar el nav-item activo
-                const activeNavItem = document.querySelector('.nav-item.active');
-                if (activeNavItem) {
-                    const activeModule = activeNavItem.dataset.module;
-                    if (activeModule && moduleToSection[activeModule]) {
-                        this.expandSection(moduleToSection[activeModule]);
+            // Pequeño delay para asegurar que el CSS se aplique
+            setTimeout(() => {
+                // SEGUNDO: Determinar qué sección debe estar desplegada (solo la del módulo activo)
+                let sectionToExpand = null;
+                
+                // Verificar si hay un módulo actual guardado
+                const currentModule = localStorage.getItem('current_module');
+                if (currentModule && moduleToSection[currentModule]) {
+                    sectionToExpand = moduleToSection[currentModule];
+                } else {
+                    // Si no hay módulo guardado, buscar el nav-item activo en el DOM
+                    const activeNavItem = document.querySelector('.nav-item.active');
+                    if (activeNavItem) {
+                        const activeModule = activeNavItem.dataset.module;
+                        if (activeModule && moduleToSection[activeModule]) {
+                            sectionToExpand = moduleToSection[activeModule];
+                        }
                     }
                 }
-            }
+
+                // TERCERO: Desplegar SOLO la sección del módulo activo
+                if (sectionToExpand) {
+                    this.expandSection(sectionToExpand);
+                }
+            }, 50);
+
         } catch (e) {
             console.error('Error loading section states:', e);
         }
@@ -175,17 +191,33 @@ const UI = {
         const header = document.querySelector(`.nav-section-header[data-section="${sectionName}"]`);
         if (header) {
             header.classList.remove('collapsed');
-            // No guardar este estado automático para que el usuario pueda colapsar manualmente
+            // Restaurar estilos normales del contenedor de items
+            const items = header.nextElementSibling;
+            if (items && items.classList.contains('nav-section-items')) {
+                items.style.maxHeight = '';
+                items.style.opacity = '';
+            }
+            // No guardar este estado automático (no llamar a saveSectionState)
+        }
+    },
+
+    // Función para colapsar una sección específica
+    collapseSection(sectionName) {
+        const header = document.querySelector(`.nav-section-header[data-section="${sectionName}"]`);
+        if (header) {
+            header.classList.add('collapsed');
         }
     },
 
     saveSectionState(section, isCollapsed) {
         try {
+            // Solo guardar el estado cuando el usuario hace clic manualmente
+            // No guardar estados automáticos de expansión por módulo activo
             const savedStates = localStorage.getItem('nav_section_states');
             const states = savedStates ? JSON.parse(savedStates) : {};
             states[section] = isCollapsed;
             localStorage.setItem('nav_section_states', JSON.stringify(states));
-            console.log('Estado guardado:', states);
+            // Eliminar console.log para reducir ruido en consola
         } catch (e) {
             console.error('Error saving section state:', e);
         }
