@@ -70,6 +70,10 @@ const UI = {
             });
         });
 
+        // Crear wrappers internos para CSS Grid (Solución 4) PRIMERO
+        // Esto debe hacerse antes de configurar eventos y estados
+        this.createGridWrappers();
+        
         // Configurar secciones colapsables - Usar event delegation en el sidebar
         const sidebarNav = document.querySelector('.sidebar-nav');
         if (sidebarNav) {
@@ -78,11 +82,18 @@ const UI = {
                 const header = e.target.closest('.nav-section-header');
                 const navItem = e.target.closest('.nav-item');
                 
+                // Si se hizo clic en un header (o sus hijos como iconos, labels, chevron) pero NO en un nav-item
                 if (header && !navItem) {
                     e.preventDefault();
                     e.stopPropagation();
                     const section = header.dataset.section;
                     if (!section) return;
+                    
+                    // Asegurar que el elemento items existe
+                    const items = header.nextElementSibling;
+                    if (!items || !items.classList.contains('nav-section-items')) {
+                        return;
+                    }
                     
                     // Toggle de la clase collapsed - el CSS se encarga de la animación
                     header.classList.toggle('collapsed');
@@ -93,15 +104,12 @@ const UI = {
                 }
             });
         }
-
-        // Crear wrappers internos para CSS Grid (Solución 4)
-        this.createGridWrappers();
         
-        // Cargar estado guardado de secciones colapsables DESPUÉS de configurar eventos
+        // Cargar estado guardado de secciones colapsables DESPUÉS de crear wrappers y configurar eventos
         // Usar setTimeout para asegurar que el DOM esté completamente renderizado
         setTimeout(() => {
             this.loadSectionStates();
-        }, 200);
+        }, 100);
     },
 
     createGridWrappers() {
@@ -113,12 +121,21 @@ const UI = {
                 return;
             }
             
+            // Obtener todos los nav-items (excluyendo el wrapper si existe)
+            const navItems = Array.from(items.children).filter(child => 
+                child.classList.contains('nav-item')
+            );
+            
+            // Si no hay items, no crear wrapper
+            if (navItems.length === 0) {
+                return;
+            }
+            
             // Crear wrapper interno
             const wrapper = document.createElement('div');
             wrapper.className = 'nav-items-wrapper';
             
             // Mover todos los nav-items al wrapper
-            const navItems = Array.from(items.children);
             navItems.forEach(item => {
                 wrapper.appendChild(item);
             });
@@ -136,6 +153,17 @@ const UI = {
                 console.warn('No se encontraron headers de sección, reintentando...');
                 setTimeout(() => this.loadSectionStates(), 200);
                 return;
+            }
+            
+            // Verificar que los wrappers estén creados
+            const allItems = document.querySelectorAll('.nav-section-items');
+            const itemsWithoutWrapper = Array.from(allItems).filter(items => 
+                !items.querySelector('.nav-items-wrapper')
+            );
+            
+            // Si faltan wrappers, crearlos
+            if (itemsWithoutWrapper.length > 0) {
+                this.createGridWrappers();
             }
 
             // Mapeo de módulos a secciones
@@ -189,13 +217,20 @@ const UI = {
                     ? states[section] 
                     : (section !== sectionToExpand); // Por defecto, colapsar todas excepto la activa
                 
-                // Aplicar la clase collapsed - el CSS se encarga del resto
+                // Aplicar la clase collapsed SIN animación inicial (para evitar el "flash")
                 if (isCollapsed) {
                     header.classList.add('collapsed');
                 } else {
                     header.classList.remove('collapsed');
                 }
             });
+            
+            // Después de aplicar estados, habilitar transiciones
+            setTimeout(() => {
+                document.querySelectorAll('.nav-section-items').forEach(items => {
+                    items.classList.add('transition-enabled');
+                });
+            }, 50);
 
         } catch (e) {
             console.error('Error loading section states:', e);
