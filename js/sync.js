@@ -19,7 +19,7 @@ const SyncManager = {
     
     // Rate limiting
     lastRequestTime: 0,
-    minRequestDelay: 200, // 200ms entre solicitudes mínimo
+    minRequestDelay: 500, // 500ms entre solicitudes mínimo (aumentado para evitar 429)
     
     // Configuración multisucursal
     MULTI_BRANCH_CONFIG: {
@@ -471,20 +471,37 @@ const SyncManager = {
                             throw new Error(result.error || 'Error desconocido');
                         }
                     } catch (e) {
-                        console.error(`❌ Error completo sincronizando ${entityType} lote ${batchIdx + 1}:`, e);
-                        console.error('Stack:', e.stack);
-                        await this.addLog('error', `Error sincronizando ${entityType} (lote ${batchIdx + 1}): ${e.message}`, 'failed');
-                        // Increment retries solo para este lote
-                        for (const item of itemsBatch) {
-                            const newRetries = (item.retries || 0) + 1;
-                            await DB.put('sync_queue', {
-                                ...item,
-                                retries: newRetries,
-                                last_attempt: new Date().toISOString(),
-                                status: newRetries >= maxRetries ? 'failed' : 'pending'
-                            });
+                        // Verificar si es error 429 (rate limiting)
+                        const is429 = e.message && (e.message.includes('Rate limit') || e.message.includes('429'));
+                        const is429Result = e.isRateLimit === true;
+                        
+                        if (is429 || is429Result) {
+                            console.warn(`⚠️ Rate limit al sincronizar ${entityType} lote ${batchIdx + 1} - se reintentará después`);
+                            // No marcar como fallido si es rate limit - mantener como pending
+                            for (const item of itemsBatch) {
+                                await DB.put('sync_queue', {
+                                    ...item,
+                                    retries: (item.retries || 0) + 1,
+                                    last_attempt: new Date().toISOString(),
+                                    status: 'pending' // Mantener como pending para reintentar
+                                });
+                            }
+                        } else {
+                            console.error(`❌ Error completo sincronizando ${entityType} lote ${batchIdx + 1}:`, e);
+                            console.error('Stack:', e.stack);
+                            await this.addLog('error', `Error sincronizando ${entityType} (lote ${batchIdx + 1}): ${e.message}`, 'failed');
+                            // Increment retries solo para este lote
+                            for (const item of itemsBatch) {
+                                const newRetries = (item.retries || 0) + 1;
+                                await DB.put('sync_queue', {
+                                    ...item,
+                                    retries: newRetries,
+                                    last_attempt: new Date().toISOString(),
+                                    status: newRetries >= maxRetries ? 'failed' : 'pending'
+                                });
+                            }
+                            errorCount += itemsBatch.length;
                         }
-                        errorCount += itemsBatch.length;
                         // Continuar con el siguiente lote en lugar de detenerse completamente
                         console.log(`⚠️ Continuando con el siguiente lote de ${entityType}...`);
                     }
@@ -492,6 +509,19 @@ const SyncManager = {
             }
 
             const duration = Date.now() - startTime;
+            
+            // Actualizar índice solo al final de toda la sincronización (una sola vez)
+            try {
+                console.log('📊 Actualizando hoja de índice...');
+                await this.updateIndexSheet();
+            } catch (indexError) {
+                console.warn('⚠️ Error actualizando índice al final (no crítico):', indexError);
+                // No marcar como error si es solo rate limiting
+                if (indexError.status !== 429 && !(indexError.result && indexError.result.error && indexError.result.error.code === 429)) {
+                    console.error('Error no relacionado con rate limiting:', indexError);
+                }
+            }
+            
             this.isSyncing = false;
             UI.updateSyncStatus(this.isOnline, false);
 
@@ -726,10 +756,12 @@ const SyncManager = {
                 const is429 = error.status === 429 || (error.result && error.result.error && error.result.error.code === 429);
                 
                 if (is429 && attempt < retries - 1) {
-                    // Exponential backoff: 2^attempt segundos
-                    const delay = Math.min(1000 * Math.pow(2, attempt), 10000); // Máximo 10 segundos
+                    // Exponential backoff: 2^attempt segundos, con delay adicional
+                    const delay = Math.min(2000 * Math.pow(2, attempt), 15000); // Máximo 15 segundos, mínimo 2s
                     console.warn(`⚠️ Rate limit alcanzado (429), esperando ${delay}ms antes de reintentar (intento ${attempt + 1}/${retries})...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
+                    // Invalidar cache después de rate limit para forzar refresh
+                    this.sheetsCache = null;
                     continue;
                 }
                 
@@ -810,9 +842,14 @@ const SyncManager = {
                         }
                     })
                 );
-                // Aplicar formato a los headers (con delay adicional)
-                await new Promise(resolve => setTimeout(resolve, 300));
-                await this.formatSheetHeaders(sheetName, headers.length);
+                // Aplicar formato a los headers (con delay adicional para evitar rate limiting)
+                await new Promise(resolve => setTimeout(resolve, 500));
+                // Formato es opcional - no bloquear si falla
+                try {
+                    await this.formatSheetHeaders(sheetName, headers.length);
+                } catch (formatError) {
+                    console.warn(`⚠️ Error formateando headers de ${sheetName} (continuando):`, formatError.message);
+                }
             }
 
             return sheetName;
@@ -1256,12 +1293,7 @@ const SyncManager = {
                 
                 console.log(`✅ ${upsertRecords.length} registros escritos en hojas de sucursal para ${entityType}`);
                 
-                // Actualizar índice después de escribir
-                try {
-                    await this.updateIndexSheet();
-                } catch (indexError) {
-                    console.warn('⚠️ Error actualizando índice (no crítico):', indexError);
-                }
+                // NO actualizar índice aquí - se actualizará al final de toda la sincronización
                 
                 return { 
                     success: true, 
@@ -1276,12 +1308,7 @@ const SyncManager = {
                 
                 console.log(`✅ ${upsertRecords.length} registros escritos en hoja ${baseSheetName}`);
                 
-                // Actualizar índice después de escribir
-                try {
-                    await this.updateIndexSheet();
-                } catch (indexError) {
-                    console.warn('⚠️ Error actualizando índice (no crítico):', indexError);
-                }
+                // NO actualizar índice aquí - se actualizará al final de toda la sincronización
                 
                 return { 
                     success: true, 
@@ -1291,6 +1318,18 @@ const SyncManager = {
                 };
             }
         } catch (e) {
+            // Verificar si es error 429 (rate limiting)
+            const is429 = e.status === 429 || (e.result && e.result.error && e.result.error.code === 429);
+            
+            if (is429) {
+                console.warn('⚠️ Rate limit (429) al enviar datos - se reintentará en la próxima sincronización');
+                return { 
+                    success: false, 
+                    error: 'Rate limit alcanzado - se reintentará automáticamente',
+                    isRateLimit: true
+                };
+            }
+            
             console.error('❌ Error enviando a Google Sheets API:', e);
             return { 
                 success: false, 
@@ -1331,9 +1370,14 @@ const SyncManager = {
                         }
                     })
                 );
-                // Aplicar formato a los headers (con delay adicional)
-                await new Promise(resolve => setTimeout(resolve, 300));
-                await this.formatSheetHeaders(targetSheetName, headers.length);
+                // Aplicar formato a los headers (con delay adicional para evitar rate limiting)
+                await new Promise(resolve => setTimeout(resolve, 500));
+                // Formato es opcional - no bloquear si falla
+                try {
+                    await this.formatSheetHeaders(targetSheetName, headers.length);
+                } catch (formatError) {
+                    console.warn(`⚠️ Error formateando headers de ${targetSheetName} (continuando):`, formatError.message);
+                }
             }
             startRow = 2;
         } else {
@@ -1377,6 +1421,7 @@ const SyncManager = {
 
     async formatSheetHeaders(sheetName, numColumns) {
         // Aplicar formato a los headers: negrita, fondo gris, texto blanco
+        // Esta función es tolerante a errores 429 y no bloquea la sincronización
         try {
             const sheetId = await this.getSheetId(sheetName);
             if (!sheetId) {
@@ -1437,8 +1482,14 @@ const SyncManager = {
             );
             console.log(`✅ Formato aplicado a headers de ${sheetName}`);
         } catch (error) {
-            console.warn(`⚠️ Error aplicando formato a headers de ${sheetName} (no crítico):`, error);
-            // No es crítico si falla el formato
+            // Si es error 429, es esperado y no crítico
+            const is429 = error.status === 429 || (error.result && error.result.error && error.result.error.code === 429);
+            if (is429) {
+                console.warn(`⚠️ Rate limit al formatear headers de ${sheetName} (se omitirá formato, no crítico)`);
+            } else {
+                console.warn(`⚠️ Error aplicando formato a headers de ${sheetName} (no crítico):`, error);
+            }
+            // No es crítico si falla el formato - la sincronización continúa
         }
     },
 
