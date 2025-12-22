@@ -509,13 +509,18 @@ body {
 .nav-section-items {
     display: grid;
     grid-template-rows: 1fr;
-    transition: grid-template-rows 0.3s ease, opacity 0.3s ease;
+    transition: none; /* Sin transición inicial para evitar flash */
     opacity: 1;
     overflow: hidden;
 }
 
+/* Habilitar transición solo después de la carga inicial */
+.nav-section-items.transition-enabled {
+    transition: grid-template-rows 0.3s ease, opacity 0.3s ease;
+}
+
 .nav-section-header.collapsed + .nav-section-items {
-    grid-template-rows: 0fr;
+    grid-template-rows: 0fr !important;
     opacity: 0;
     pointer-events: none;
 }
@@ -526,6 +531,7 @@ body {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    grid-row: 1;
 }
 
 .nav-section-items .nav-item {
