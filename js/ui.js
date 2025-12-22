@@ -96,38 +96,35 @@ const UI = {
                     
                     if (!wasCollapsed) {
                         // Va a colapsar
-                        // Primero obtener la altura actual (sin restricciones)
-                        const currentHeight = items.scrollHeight;
-                        // Establecer esa altura como max-height
+                        const currentHeight = items.scrollHeight || items.offsetHeight;
                         items.style.maxHeight = currentHeight + 'px';
                         // Forzar reflow
-                        requestAnimationFrame(() => {
-                            // Ahora colapsar
-                            header.classList.add('collapsed');
-                            items.style.maxHeight = '0px';
-                        });
+                        void items.offsetHeight;
+                        // Ahora colapsar
+                        header.classList.add('collapsed');
+                        items.style.maxHeight = '0px';
                     } else {
                         // Va a expandir
                         header.classList.remove('collapsed');
-                        // Quitar cualquier restricción de max-height temporalmente
+                        // Quitar restricción temporalmente para medir
                         items.style.maxHeight = 'none';
-                        // Forzar reflow para que el navegador calcule la altura real
-                        requestAnimationFrame(() => {
-                            const realHeight = items.scrollHeight;
-                            // Establecer a 0 primero
-                            items.style.maxHeight = '0px';
-                            // Forzar otro reflow
-                            requestAnimationFrame(() => {
-                                // Ahora animar hasta la altura real
+                        items.style.opacity = '1';
+                        // Forzar reflow
+                        void items.offsetHeight;
+                        const realHeight = items.scrollHeight || items.offsetHeight;
+                        // Establecer a 0 primero
+                        items.style.maxHeight = '0px';
+                        // Forzar otro reflow
+                        void items.offsetHeight;
+                        // Ahora animar hasta la altura real
+                        items.style.maxHeight = realHeight + 'px';
+                        // Después de la animación, mantener el max-height
+                        setTimeout(() => {
+                            if (!header.classList.contains('collapsed')) {
+                                // Mantener el max-height para que el contenido sea visible
                                 items.style.maxHeight = realHeight + 'px';
-                                // Después de la animación, remover el max-height para que sea automático
-                                setTimeout(() => {
-                                    if (!header.classList.contains('collapsed')) {
-                                        items.style.maxHeight = '';
-                                    }
-                                }, 350);
-                            });
-                        });
+                            }
+                        }, 350);
                     }
                     
                     const isCollapsed = !wasCollapsed;
@@ -137,54 +134,6 @@ const UI = {
                 }
             });
         }
-        
-        // También configurar directamente en cada header como backup
-        setTimeout(() => {
-            document.querySelectorAll('.nav-section-header').forEach(header => {
-                header.addEventListener('click', (e) => {
-                    const navItem = e.target.closest('.nav-item');
-                    if (navItem) return; // Si es un nav-item, no hacer nada
-                    
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const section = header.dataset.section;
-                    if (!section) return;
-                    
-                    const items = header.nextElementSibling;
-                    if (!items || !items.classList.contains('nav-section-items')) {
-                        return;
-                    }
-                    
-                    const wasCollapsed = header.classList.contains('collapsed');
-                    
-                    if (!wasCollapsed) {
-                        const currentHeight = items.scrollHeight;
-                        items.style.maxHeight = currentHeight + 'px';
-                        requestAnimationFrame(() => {
-                            header.classList.add('collapsed');
-                            items.style.maxHeight = '0px';
-                        });
-                    } else {
-                        header.classList.remove('collapsed');
-                        items.style.maxHeight = 'none';
-                        requestAnimationFrame(() => {
-                            const realHeight = items.scrollHeight;
-                            items.style.maxHeight = '0px';
-                            requestAnimationFrame(() => {
-                                items.style.maxHeight = realHeight + 'px';
-                                setTimeout(() => {
-                                    if (!header.classList.contains('collapsed')) {
-                                        items.style.maxHeight = '';
-                                    }
-                                }, 350);
-                            });
-                        });
-                    }
-                    
-                    this.saveSectionState(section, !wasCollapsed);
-                });
-            });
-        }, 200);
         
         // Cargar estado guardado de secciones colapsables DESPUÉS de crear wrappers y configurar eventos
         // Usar setTimeout para asegurar que el DOM esté completamente renderizado
@@ -265,11 +214,13 @@ const UI = {
                 if (isCollapsed) {
                     header.classList.add('collapsed');
                     items.style.maxHeight = '0px';
+                    items.style.opacity = '0';
                 } else {
                     header.classList.remove('collapsed');
                     // Medir altura real sin restricciones
                     items.style.maxHeight = 'none';
-                    const realHeight = items.scrollHeight;
+                    items.style.opacity = '1';
+                    const realHeight = items.scrollHeight || items.offsetHeight;
                     items.style.maxHeight = realHeight + 'px';
                 }
             });
