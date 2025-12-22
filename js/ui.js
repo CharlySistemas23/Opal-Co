@@ -111,18 +111,71 @@ const UI = {
 
     loadSectionStates() {
         try {
+            // Mapeo de módulos a secciones
+            const moduleToSection = {
+                'dashboard': 'operaciones',
+                'pos': 'operaciones',
+                'cash': 'operaciones',
+                'barcodes': 'operaciones',
+                'inventory': 'inventario',
+                'transfers': 'inventario',
+                'customers': 'clientes',
+                'repairs': 'clientes',
+                'tourist-report': 'clientes',
+                'employees': 'administracion',
+                'reports': 'analisis',
+                'costs': 'analisis',
+                'sync': 'sistema',
+                'settings': 'sistema',
+                'qa': 'sistema'
+            };
+
+            // Por defecto, todas las secciones empiezan colapsadas
+            document.querySelectorAll('.nav-section-header').forEach(header => {
+                const section = header.dataset.section;
+                if (section) {
+                    header.classList.add('collapsed');
+                }
+            });
+
+            // Cargar estado guardado (si existe)
             const savedStates = localStorage.getItem('nav_section_states');
             if (savedStates) {
                 const states = JSON.parse(savedStates);
                 document.querySelectorAll('.nav-section-header').forEach(header => {
                     const section = header.dataset.section;
-                    if (section && states[section] === true) {
-                        header.classList.add('collapsed');
+                    if (section && states[section] === false) {
+                        // Si el estado guardado dice que NO está colapsada, quitar la clase
+                        header.classList.remove('collapsed');
                     }
                 });
             }
+
+            // Si hay un módulo actual guardado, desplegar su sección
+            const currentModule = localStorage.getItem('current_module');
+            if (currentModule && moduleToSection[currentModule]) {
+                this.expandSection(moduleToSection[currentModule]);
+            } else {
+                // Si no hay módulo guardado, buscar el nav-item activo
+                const activeNavItem = document.querySelector('.nav-item.active');
+                if (activeNavItem) {
+                    const activeModule = activeNavItem.dataset.module;
+                    if (activeModule && moduleToSection[activeModule]) {
+                        this.expandSection(moduleToSection[activeModule]);
+                    }
+                }
+            }
         } catch (e) {
             console.error('Error loading section states:', e);
+        }
+    },
+
+    // Función para expandir una sección específica
+    expandSection(sectionName) {
+        const header = document.querySelector(`.nav-section-header[data-section="${sectionName}"]`);
+        if (header) {
+            header.classList.remove('collapsed');
+            // No guardar este estado automático para que el usuario pueda colapsar manualmente
         }
     },
 
@@ -200,6 +253,31 @@ const UI = {
         // Si es el mismo módulo y no se está cargando, no hacer nada
         if (this.currentModule === moduleName && !this.loadingModule) {
             return;
+        }
+
+        // Mapeo de módulos a secciones
+        const moduleToSection = {
+            'dashboard': 'operaciones',
+            'pos': 'operaciones',
+            'cash': 'operaciones',
+            'barcodes': 'operaciones',
+            'inventory': 'inventario',
+            'transfers': 'inventario',
+            'customers': 'clientes',
+            'repairs': 'clientes',
+            'tourist-report': 'clientes',
+            'employees': 'administracion',
+            'reports': 'analisis',
+            'costs': 'analisis',
+            'sync': 'sistema',
+            'settings': 'sistema',
+            'qa': 'sistema'
+        };
+
+        // Desplegar automáticamente la sección del módulo actual
+        const sectionName = moduleToSection[moduleName];
+        if (sectionName) {
+            this.expandSection(sectionName);
         }
 
         // Cancelar cualquier operación pendiente de otro módulo
