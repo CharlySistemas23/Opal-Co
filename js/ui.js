@@ -94,11 +94,38 @@ const UI = {
             });
         }
 
+        // Crear wrappers internos para CSS Grid (Solución 4)
+        this.createGridWrappers();
+        
         // Cargar estado guardado de secciones colapsables DESPUÉS de configurar eventos
         // Usar setTimeout para asegurar que el DOM esté completamente renderizado
         setTimeout(() => {
             this.loadSectionStates();
         }, 200);
+    },
+
+    createGridWrappers() {
+        // Crear wrappers internos para que CSS Grid funcione correctamente
+        // Esto es necesario para la Solución 4 (CSS Grid)
+        document.querySelectorAll('.nav-section-items').forEach(items => {
+            // Verificar si ya tiene wrapper
+            if (items.querySelector('.nav-items-wrapper')) {
+                return;
+            }
+            
+            // Crear wrapper interno
+            const wrapper = document.createElement('div');
+            wrapper.className = 'nav-items-wrapper';
+            
+            // Mover todos los nav-items al wrapper
+            const navItems = Array.from(items.children);
+            navItems.forEach(item => {
+                wrapper.appendChild(item);
+            });
+            
+            // Agregar el wrapper al contenedor
+            items.appendChild(wrapper);
+        });
     },
 
     loadSectionStates() {
