@@ -72,12 +72,17 @@ const UI = {
 
         // Configurar secciones colapsables - Usar event delegation en el sidebar
         const sidebarNav = document.querySelector('.sidebar-nav');
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:73',message:'setupNavigation sidebarNav',data:{sidebarNavFound:!!sidebarNav},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         if (sidebarNav) {
             sidebarNav.addEventListener('click', (e) => {
                 // Verificar si el click fue en un header o en sus hijos, pero no en un nav-item
                 const header = e.target.closest('.nav-section-header');
                 const navItem = e.target.closest('.nav-item');
-                
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:78',message:'click event',data:{headerFound:!!header,navItemFound:!!navItem,section:header?.dataset.section},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                // #endregion
                 if (header && !navItem) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -86,7 +91,9 @@ const UI = {
                     
                     const wasCollapsed = header.classList.contains('collapsed');
                     const isCollapsed = !wasCollapsed;
-                    
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:87',message:'MANUAL toggle',data:{section:section,wasCollapsed:wasCollapsed,isCollapsed:isCollapsed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                    // #endregion
                     if (isCollapsed) {
                         header.classList.add('collapsed');
                         const items = header.nextElementSibling;
@@ -145,9 +152,15 @@ const UI = {
     },
 
     loadSectionStates() {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:147',message:'loadSectionStates ENTRY',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         try {
             // Verificar que los elementos existan en el DOM
             const headers = document.querySelectorAll('.nav-section-header');
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:151',message:'headers query result',data:{headersFound:headers.length,headersList:Array.from(headers).map(h=>h.dataset.section)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             if (headers.length === 0) {
                 console.warn('No se encontraron headers de sección, reintentando...');
                 setTimeout(() => this.loadSectionStates(), 200);
@@ -174,21 +187,37 @@ const UI = {
             };
 
             // PRIMERO: Colapsar TODAS las secciones sin excepción
-            headers.forEach(header => {
+            headers.forEach((header, index) => {
                 const section = header.dataset.section;
                 if (section) {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:177',message:'BEFORE collapse',data:{section:section,hasCollapsed:header.classList.contains('collapsed'),index:index},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                    // #endregion
                     // Forzar clase collapsed
                     header.classList.add('collapsed');
                     // Aplicar estilos inline para forzar el colapso
                     const items = header.nextElementSibling;
                     if (items && items.classList.contains('nav-section-items')) {
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:185',message:'APPLYING display:none',data:{section:section,itemsElement:!!items,currentDisplay:items.style.display},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                        // #endregion
                         items.style.display = 'none'; // Ocultar completamente
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:186',message:'AFTER display:none',data:{section:section,displayAfter:items.style.display,hasCollapsed:header.classList.contains('collapsed')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                        // #endregion
+                    } else {
+                        // #region agent log
+                        fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:189',message:'NO ITEMS ELEMENT FOUND',data:{section:section,nextSibling:!!header.nextElementSibling},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                        // #endregion
                     }
                 }
             });
 
             // Pequeño delay para que se apliquen los estilos
             setTimeout(() => {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:191',message:'setTimeout callback START',data:{checkDisplayAfter:Array.from(document.querySelectorAll('.nav-section-items')).map((items,idx)=>({section:items.previousElementSibling?.dataset.section,display:items.style.display})),timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
                 // SEGUNDO: Determinar qué sección debe estar desplegada
                 let sectionToExpand = null;
                 
@@ -206,7 +235,9 @@ const UI = {
                         }
                     }
                 }
-
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:207',message:'BEFORE expandSection',data:{sectionToExpand:sectionToExpand,currentModule:currentModule},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
                 // TERCERO: Desplegar SOLO la sección del módulo activo
                 if (sectionToExpand) {
                     this.expandSection(sectionToExpand);
@@ -220,17 +251,33 @@ const UI = {
 
     // Función para expandir una sección específica
     expandSection(sectionName) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:221',message:'expandSection ENTRY',data:{sectionName:sectionName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         const header = document.querySelector(`.nav-section-header[data-section="${sectionName}"]`);
         if (header) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:224',message:'BEFORE expand',data:{sectionName:sectionName,hasCollapsed:header.classList.contains('collapsed')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
             header.classList.remove('collapsed');
             // Restaurar estilos normales del contenedor de items
             const items = header.nextElementSibling;
             if (items && items.classList.contains('nav-section-items')) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:228',message:'REMOVING display:none',data:{sectionName:sectionName,displayBefore:items.style.display},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
                 items.style.display = ''; // Mostrar el contenedor
                 items.style.maxHeight = '';
                 items.style.opacity = '';
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:232',message:'AFTER expand',data:{sectionName:sectionName,displayAfter:items.style.display,hasCollapsed:header.classList.contains('collapsed')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
             }
             // No guardar este estado automático (no llamar a saveSectionState)
+        } else {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ui.js:237',message:'HEADER NOT FOUND',data:{sectionName:sectionName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
         }
     },
 
