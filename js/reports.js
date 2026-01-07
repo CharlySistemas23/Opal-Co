@@ -93,6 +93,7 @@ const Reports = {
         content.innerHTML = `
             <div id="reports-tabs" class="tabs-container" style="margin-bottom: var(--spacing-lg);">
                 <button class="tab-btn active" data-tab="reports"><i class="fas fa-chart-bar"></i> Reportes</button>
+                <button class="tab-btn" data-tab="commissions"><i class="fas fa-percent"></i> Comisiones</button>
                 <button class="tab-btn" data-tab="overview"><i class="fas fa-chart-line"></i> Resumen</button>
                 <button class="tab-btn" data-tab="analysis"><i class="fas fa-brain"></i> Análisis</button>
                 <button class="tab-btn" data-tab="compare"><i class="fas fa-balance-scale"></i> Comparativas</button>
@@ -129,6 +130,11 @@ const Reports = {
                     content.innerHTML = await this.getReportsTab();
                     this.setupPresetRanges();
                     await this.loadCatalogs();
+                    break;
+                case 'commissions':
+                    content.innerHTML = await this.getCommissionsTab();
+                    this.setupCommissionsPresetRanges();
+                    await this.loadCommissionsCatalogs();
                     break;
                 case 'overview':
                     content.innerHTML = await this.getOverviewTab();
@@ -398,6 +404,67 @@ const Reports = {
             <div id="history-list" style="max-height: 600px; overflow-y: auto; width: 100%; overflow-x: auto;">
                 <div class="empty-state">Cargando historial...</div>
             </div>
+        `;
+    },
+
+    async getCommissionsTab() {
+        return `
+            <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light); margin-bottom: var(--spacing-lg);">
+                <h3 style="margin-bottom: var(--spacing-md); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                    <i class="fas fa-filter"></i> Filtros de Comisiones
+                </h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-md); width: 100%; box-sizing: border-box;">
+                    <div class="form-group" style="min-width: 0;">
+                        <label>Fecha Desde</label>
+                        <input type="date" id="commissions-date-from" class="form-input" value="${Utils.formatDate(new Date(Date.now() - 30*24*60*60*1000), 'YYYY-MM-DD')}" style="width: 100%;">
+                    </div>
+                    <div class="form-group" style="min-width: 0;">
+                        <label>Fecha Hasta</label>
+                        <input type="date" id="commissions-date-to" class="form-input" value="${Utils.formatDate(new Date(), 'YYYY-MM-DD')}" style="width: 100%;">
+                    </div>
+                    <div class="form-group" style="min-width: 0;">
+                        <label>Rango Predefinido</label>
+                        <select id="commissions-preset-range" class="form-select" style="width: 100%;">
+                            <option value="">Personalizado</option>
+                            <option value="today">Hoy</option>
+                            <option value="yesterday">Ayer</option>
+                            <option value="week">Esta Semana</option>
+                            <option value="lastweek">Semana Pasada</option>
+                            <option value="month">Este Mes</option>
+                            <option value="lastmonth">Mes Pasado</option>
+                            <option value="quarter">Este Trimestre</option>
+                            <option value="year">Este Año</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="min-width: 0;">
+                        <label>Sucursal</label>
+                        <select id="commissions-branch" class="form-select" style="width: 100%;">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="min-width: 0;">
+                        <label>Vendedor</label>
+                        <select id="commissions-seller" class="form-select" style="width: 100%;">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="min-width: 0;">
+                        <label>Guía</label>
+                        <select id="commissions-guide" class="form-select" style="width: 100%;">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-top: var(--spacing-md); display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
+                    <button class="btn-primary btn-sm" onclick="window.Reports.generateCommissionsReport()">
+                        <i class="fas fa-chart-bar"></i> Generar Reporte de Comisiones
+                    </button>
+                    <button class="btn-secondary btn-sm" onclick="window.Reports.exportCommissionsReport()">
+                        <i class="fas fa-download"></i> Exportar
+                    </button>
+                </div>
+            </div>
+            <div id="commissions-results" style="width: 100%; max-width: 100%; box-sizing: border-box;"></div>
         `;
     },
 
@@ -2093,6 +2160,373 @@ const Reports = {
 
         Utils.exportToExcel(exportData, `analisis_avanzado_${Utils.formatDate(new Date(), 'YYYYMMDD')}.xlsx`, 'Análisis Avanzado');
         Utils.showNotification('Análisis exportado', 'success');
+    },
+
+    async loadCommissionsCatalogs() {
+        const branches = await DB.getAll('catalog_branches');
+        const sellers = await DB.getAll('catalog_sellers');
+        const guides = await DB.getAll('catalog_guides');
+
+        const branchSelect = document.getElementById('commissions-branch');
+        const sellerSelect = document.getElementById('commissions-seller');
+        const guideSelect = document.getElementById('commissions-guide');
+
+        if (branchSelect) {
+            branchSelect.innerHTML = '<option value="">Todas</option>' + branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+        }
+        if (sellerSelect) {
+            sellerSelect.innerHTML = '<option value="">Todos</option>' + sellers.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        }
+        if (guideSelect) {
+            guideSelect.innerHTML = '<option value="">Todos</option>' + guides.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+        }
+    },
+
+    setupCommissionsPresetRanges() {
+        const presetSelect = document.getElementById('commissions-preset-range');
+        const dateFrom = document.getElementById('commissions-date-from');
+        const dateTo = document.getElementById('commissions-date-to');
+        
+        presetSelect?.addEventListener('change', () => {
+            const today = new Date();
+            const preset = presetSelect.value;
+            
+            let fromDate = new Date();
+            let toDate = new Date();
+            
+            switch(preset) {
+                case 'today':
+                    fromDate = new Date(today);
+                    toDate = new Date(today);
+                    break;
+                case 'yesterday':
+                    fromDate = new Date(today);
+                    fromDate.setDate(fromDate.getDate() - 1);
+                    toDate = new Date(fromDate);
+                    break;
+                case 'week':
+                    fromDate = new Date(today);
+                    fromDate.setDate(fromDate.getDate() - today.getDay());
+                    toDate = new Date(today);
+                    break;
+                case 'lastweek':
+                    fromDate = new Date(today);
+                    fromDate.setDate(fromDate.getDate() - today.getDay() - 7);
+                    toDate = new Date(fromDate);
+                    toDate.setDate(toDate.getDate() + 6);
+                    break;
+                case 'month':
+                    fromDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                    toDate = new Date(today);
+                    break;
+                case 'lastmonth':
+                    fromDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                    toDate = new Date(today.getFullYear(), today.getMonth(), 0);
+                    break;
+                case 'quarter':
+                    const quarter = Math.floor(today.getMonth() / 3);
+                    fromDate = new Date(today.getFullYear(), quarter * 3, 1);
+                    toDate = new Date(today);
+                    break;
+                case 'year':
+                    fromDate = new Date(today.getFullYear(), 0, 1);
+                    toDate = new Date(today);
+                    break;
+            }
+            
+            if (dateFrom) dateFrom.value = Utils.formatDate(fromDate, 'YYYY-MM-DD');
+            if (dateTo) dateTo.value = Utils.formatDate(toDate, 'YYYY-MM-DD');
+        });
+    },
+
+    async generateCommissionsReport() {
+        const container = document.getElementById('commissions-results');
+        if (!container) return;
+
+        try {
+            container.innerHTML = '<div style="text-align: center; padding: 40px;"><i class="fas fa-spinner fa-spin"></i> Generando reporte...</div>';
+
+            const dateFrom = document.getElementById('commissions-date-from')?.value;
+            const dateTo = document.getElementById('commissions-date-to')?.value;
+            const branchId = document.getElementById('commissions-branch')?.value || '';
+            const sellerId = document.getElementById('commissions-seller')?.value || '';
+            const guideId = document.getElementById('commissions-guide')?.value || '';
+
+            if (!dateFrom || !dateTo) {
+                Utils.showNotification('Selecciona un rango de fechas', 'error');
+                return;
+            }
+
+            // Obtener ventas filtradas
+            const allSales = await this.getFilteredSales({ branchId: branchId || null });
+            const sales = allSales.filter(sale => {
+                if (sale.status !== 'completada') return false;
+                const saleDate = sale.created_at?.split('T')[0];
+                if (saleDate < dateFrom || saleDate > dateTo) return false;
+                if (sellerId && sale.seller_id !== sellerId) return false;
+                if (guideId && sale.guide_id !== guideId) return false;
+                return true;
+            });
+
+            // Calcular comisiones
+            const commissionsBreakdown = {
+                sellers: 0,
+                guides: 0,
+                total: 0
+            };
+
+            const sellerCommissions = {};
+            const guideCommissions = {};
+
+            sales.forEach(sale => {
+                const sellerComm = sale.seller_commission || 0;
+                const guideComm = sale.guide_commission || 0;
+
+                commissionsBreakdown.sellers += sellerComm;
+                commissionsBreakdown.guides += guideComm;
+
+                if (sellerComm > 0 && sale.seller_id) {
+                    if (!sellerCommissions[sale.seller_id]) {
+                        sellerCommissions[sale.seller_id] = { id: sale.seller_id, name: '', total: 0, count: 0 };
+                    }
+                    sellerCommissions[sale.seller_id].total += sellerComm;
+                    sellerCommissions[sale.seller_id].count += 1;
+                }
+
+                if (guideComm > 0 && sale.guide_id) {
+                    if (!guideCommissions[sale.guide_id]) {
+                        guideCommissions[sale.guide_id] = { id: sale.guide_id, name: '', total: 0, count: 0 };
+                    }
+                    guideCommissions[sale.guide_id].total += guideComm;
+                    guideCommissions[sale.guide_id].count += 1;
+                }
+            });
+
+            commissionsBreakdown.total = commissionsBreakdown.sellers + commissionsBreakdown.guides;
+
+            // Obtener nombres
+            const sellers = await DB.getAll('catalog_sellers');
+            const guides = await DB.getAll('catalog_guides');
+            const branches = await DB.getAll('catalog_branches');
+
+            Object.values(sellerCommissions).forEach(comm => {
+                const seller = sellers.find(s => s.id === comm.id);
+                comm.name = seller?.name || 'N/A';
+            });
+
+            Object.values(guideCommissions).forEach(comm => {
+                const guide = guides.find(g => g.id === comm.id);
+                comm.name = guide?.name || 'N/A';
+            });
+
+            // Renderizar reporte
+            const sellerCommissionsList = Object.values(sellerCommissions).sort((a, b) => b.total - a.total);
+            const guideCommissionsList = Object.values(guideCommissions).sort((a, b) => b.total - a.total);
+
+            container.innerHTML = `
+                <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light); margin-bottom: var(--spacing-lg);">
+                    <h3 style="margin-bottom: var(--spacing-md); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <i class="fas fa-percent"></i> Resumen de Comisiones
+                    </h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--spacing-md);">
+                        <div style="padding: var(--spacing-md); background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%); border-radius: var(--radius-md); color: white;">
+                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                <i class="fas fa-user-tag"></i> Comisiones Vendedores
+                            </div>
+                            <div style="font-weight: 700; font-size: 28px; margin-bottom: 4px;">${Utils.formatCurrency(commissionsBreakdown.sellers)}</div>
+                            <div style="font-size: 11px; opacity: 0.8;">
+                                ${commissionsBreakdown.total > 0 ? ((commissionsBreakdown.sellers / commissionsBreakdown.total) * 100).toFixed(1) : 0}% del total
+                            </div>
+                        </div>
+                        <div style="padding: var(--spacing-md); background: linear-gradient(135deg, var(--color-success) 0%, #4CAF50 100%); border-radius: var(--radius-md); color: white;">
+                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                <i class="fas fa-suitcase"></i> Comisiones Guías
+                            </div>
+                            <div style="font-weight: 700; font-size: 28px; margin-bottom: 4px;">${Utils.formatCurrency(commissionsBreakdown.guides)}</div>
+                            <div style="font-size: 11px; opacity: 0.8;">
+                                ${commissionsBreakdown.total > 0 ? ((commissionsBreakdown.guides / commissionsBreakdown.total) * 100).toFixed(1) : 0}% del total
+                            </div>
+                        </div>
+                        <div style="padding: var(--spacing-md); background: var(--color-bg-secondary); border: 2px solid var(--color-border); border-radius: var(--radius-md);">
+                            <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                <i class="fas fa-calculator"></i> Total Comisiones
+                            </div>
+                            <div style="font-weight: 700; font-size: 28px; color: var(--color-text); margin-bottom: 4px;">${Utils.formatCurrency(commissionsBreakdown.total)}</div>
+                            <div style="font-size: 11px; color: var(--color-text-secondary);">
+                                ${sales.length} venta${sales.length !== 1 ? 's' : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                ${sellerCommissionsList.length > 0 ? `
+                    <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light); margin-bottom: var(--spacing-lg);">
+                        <h3 style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--spacing-md);">
+                            <i class="fas fa-user-tag"></i> Comisiones por Vendedor
+                        </h3>
+                        <div style="overflow-x: auto;">
+                            <table class="cart-table" style="width: 100%; min-width: 500px;">
+                                <thead>
+                                    <tr>
+                                        <th>Vendedor</th>
+                                        <th>Ventas</th>
+                                        <th>Total Comisiones</th>
+                                        <th>Promedio por Venta</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${sellerCommissionsList.map(comm => `
+                                        <tr>
+                                            <td><strong>${comm.name}</strong></td>
+                                            <td>${comm.count}</td>
+                                            <td style="font-weight: 600; color: var(--color-primary);">${Utils.formatCurrency(comm.total)}</td>
+                                            <td>${Utils.formatCurrency(comm.count > 0 ? comm.total / comm.count : 0)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${guideCommissionsList.length > 0 ? `
+                    <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light); margin-bottom: var(--spacing-lg);">
+                        <h3 style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--spacing-md);">
+                            <i class="fas fa-suitcase"></i> Comisiones por Guía
+                        </h3>
+                        <div style="overflow-x: auto;">
+                            <table class="cart-table" style="width: 100%; min-width: 500px;">
+                                <thead>
+                                    <tr>
+                                        <th>Guía</th>
+                                        <th>Ventas</th>
+                                        <th>Total Comisiones</th>
+                                        <th>Promedio por Venta</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${guideCommissionsList.map(comm => `
+                                        <tr>
+                                            <td><strong>${comm.name}</strong></td>
+                                            <td>${comm.count}</td>
+                                            <td style="font-weight: 600; color: var(--color-success);">${Utils.formatCurrency(comm.total)}</td>
+                                            <td>${Utils.formatCurrency(comm.count > 0 ? comm.total / comm.count : 0)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <div class="module" style="padding: 0; background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light); overflow: hidden; margin-top: var(--spacing-lg);">
+                    <div style="padding: var(--spacing-md); border-bottom: 1px solid var(--color-border-light);">
+                        <h3 style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 0;">
+                            <i class="fas fa-list"></i> Detalle de Ventas con Comisiones
+                        </h3>
+                    </div>
+                    <div style="overflow-x: auto; width: 100%;">
+                        <table class="cart-table" style="width: 100%; max-width: 100%; table-layout: auto; min-width: 1000px;">
+                            <thead>
+                                <tr>
+                                    <th>Folio</th>
+                                    <th>Fecha</th>
+                                    <th>Sucursal</th>
+                                    <th>Vendedor</th>
+                                    <th>Guía</th>
+                                    <th>Total Venta</th>
+                                    <th>Com. Vendedor</th>
+                                    <th>Com. Guía</th>
+                                    <th>Total Comisiones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${sales.map(sale => {
+                                    const branch = branches.find(b => b.id === sale.branch_id);
+                                    const seller = sellers.find(s => s.id === sale.seller_id);
+                                    const guide = guides.find(g => g.id === sale.guide_id);
+                                    const sellerComm = sale.seller_commission || 0;
+                                    const guideComm = sale.guide_commission || 0;
+                                    return `
+                                        <tr>
+                                            <td>${sale.folio || 'N/A'}</td>
+                                            <td>${Utils.formatDate(sale.created_at, 'DD/MM/YYYY')}</td>
+                                            <td>${branch?.name || 'N/A'}</td>
+                                            <td>${seller?.name || 'N/A'}</td>
+                                            <td>${guide?.name || 'N/A'}</td>
+                                            <td style="font-weight: 600;">${Utils.formatCurrency(sale.total)}</td>
+                                            <td style="color: var(--color-primary); font-weight: 500;">${Utils.formatCurrency(sellerComm)}</td>
+                                            <td style="color: var(--color-success); font-weight: 500;">${Utils.formatCurrency(guideComm)}</td>
+                                            <td style="font-weight: 600;">${Utils.formatCurrency(sellerComm + guideComm)}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+
+            if (sales.length === 0) {
+                container.innerHTML = '<div class="empty-state">No hay ventas con comisiones en el período seleccionado</div>';
+            }
+
+        } catch (e) {
+            console.error('Error generando reporte de comisiones:', e);
+            container.innerHTML = `
+                <div style="padding: var(--spacing-md); background: var(--color-danger); color: white; border-radius: var(--radius-md);">
+                    <strong>Error:</strong> ${e.message}
+                </div>
+            `;
+        }
+    },
+
+    async exportCommissionsReport() {
+        const dateFrom = document.getElementById('commissions-date-from')?.value;
+        const dateTo = document.getElementById('commissions-date-to')?.value;
+        
+        if (!dateFrom || !dateTo) {
+            Utils.showNotification('Selecciona un rango de fechas', 'error');
+            return;
+        }
+
+        const branchId = document.getElementById('commissions-branch')?.value || '';
+        const sellerId = document.getElementById('commissions-seller')?.value || '';
+        const guideId = document.getElementById('commissions-guide')?.value || '';
+
+        const allSales = await this.getFilteredSales({ branchId: branchId || null });
+        const sales = allSales.filter(sale => {
+            if (sale.status !== 'completada') return false;
+            const saleDate = sale.created_at?.split('T')[0];
+            if (saleDate < dateFrom || saleDate > dateTo) return false;
+            if (sellerId && sale.seller_id !== sellerId) return false;
+            if (guideId && sale.guide_id !== guideId) return false;
+            return true;
+        });
+
+        const sellers = await DB.getAll('catalog_sellers');
+        const guides = await DB.getAll('catalog_guides');
+        const branches = await DB.getAll('catalog_branches');
+
+        const exportData = sales.map(sale => {
+            const branch = branches.find(b => b.id === sale.branch_id);
+            const seller = sellers.find(s => s.id === sale.seller_id);
+            const guide = guides.find(g => g.id === sale.guide_id);
+            return {
+                'Folio': sale.folio || 'N/A',
+                'Fecha': Utils.formatDate(sale.created_at, 'DD/MM/YYYY'),
+                'Sucursal': branch?.name || 'N/A',
+                'Vendedor': seller?.name || 'N/A',
+                'Guía': guide?.name || 'N/A',
+                'Total Venta': sale.total || 0,
+                'Comisión Vendedor': sale.seller_commission || 0,
+                'Comisión Guía': sale.guide_commission || 0,
+                'Total Comisiones': (sale.seller_commission || 0) + (sale.guide_commission || 0)
+            };
+        });
+
+        Utils.exportToExcel(exportData, `comisiones_${dateFrom}_${dateTo}.xlsx`, 'Comisiones');
+        Utils.showNotification('Reporte de comisiones exportado', 'success');
     }
 };
 
