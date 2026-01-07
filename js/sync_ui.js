@@ -117,12 +117,25 @@ const SyncUI = {
     },
 
     async getOverviewTab() {
-        // Recargar configuración de sincronización desde la base de datos
+        // Recargar configuración de sincronización desde la base de datos siempre
         try {
             const urlSetting = await DB.get('settings', 'sync_url');
             const tokenSetting = await DB.get('settings', 'sync_token');
-            if (urlSetting) SyncManager.syncUrl = urlSetting.value;
-            if (tokenSetting) SyncManager.syncToken = tokenSetting.value;
+            const clientIdSetting = await DB.get('settings', 'google_client_id');
+            const spreadsheetIdSetting = await DB.get('settings', 'google_sheets_spreadsheet_id');
+            
+            // Actualizar SyncManager con los valores de la base de datos
+            SyncManager.syncUrl = urlSetting?.value || null;
+            SyncManager.syncToken = tokenSetting?.value || null;
+            SyncManager.googleClientId = clientIdSetting?.value || null;
+            SyncManager.spreadsheetId = spreadsheetIdSetting?.value || null;
+            
+            console.log('Configuración de sincronización recargada:', {
+                hasUrl: !!SyncManager.syncUrl,
+                hasToken: !!SyncManager.syncToken,
+                hasClientId: !!SyncManager.googleClientId,
+                hasSpreadsheetId: !!SyncManager.spreadsheetId
+            });
         } catch (e) {
             console.error('Error loading sync settings:', e);
         }
@@ -139,8 +152,8 @@ const SyncUI = {
             lastSync = null;
         }
 
-        // Verificar si está configurado
-        const isConfigured = SyncManager.syncUrl && SyncManager.syncToken;
+        // Verificar si está configurado - verificar nuevamente después de recargar
+        const isConfigured = SyncManager.syncUrl && SyncManager.syncToken && SyncManager.syncUrl.trim() !== '' && SyncManager.syncToken.trim() !== '';
         
         return `
             ${!isConfigured ? `
@@ -148,10 +161,22 @@ const SyncUI = {
                     <strong><i class="fas fa-exclamation-triangle"></i> Configuración Requerida</strong>
                     <p style="margin: var(--spacing-xs) 0 0 0; font-size: 12px;">
                         La URL y Token de sincronización no están configurados. 
-                        Ve a <strong>Configuración → Sincronización</strong> para configurarlos.
+                        Ve a la pestaña <strong>Configuración</strong> para configurarlos.
+                    </p>
+                    <div style="margin-top: var(--spacing-sm); font-size: 11px; opacity: 0.9;">
+                        <div><strong>Estado actual:</strong></div>
+                        <div>• URL: ${SyncManager.syncUrl ? '✓ Configurada' : '✗ No configurada'}</div>
+                        <div>• Token: ${SyncManager.syncToken ? '✓ Configurado' : '✗ No configurado'}</div>
+                    </div>
+                </div>
+            ` : `
+                <div style="padding: var(--spacing-md); background: var(--color-success); color: white; border-radius: var(--radius-md); margin-bottom: var(--spacing-md);">
+                    <strong><i class="fas fa-check-circle"></i> Configuración Activa</strong>
+                    <p style="margin: var(--spacing-xs) 0 0 0; font-size: 12px;">
+                        La sincronización está configurada correctamente.
                     </p>
                 </div>
-            ` : ''}
+            `}
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--spacing-md); margin-bottom: var(--spacing-lg); width: 100%; max-width: 100%; box-sizing: border-box;">
                 <div class="kpi-card">
                     <div class="kpi-label">Pendientes</div>
@@ -263,8 +288,11 @@ const SyncUI = {
                                 <i class="fas fa-pause"></i> Pausar Sincronización
                             </button>
                         `}
-                        <button class="btn-secondary btn-sm" onclick="window.SyncManager.clearSyncedItems(); window.SyncUI.loadTab('overview');" style="width: 100%;" ${SyncManager.isSyncing ? 'disabled' : ''}>
+                        <button class="btn-secondary btn-sm" onclick="window.SyncManager.clearSyncedItems().then(() => window.SyncUI.loadTab('overview'));" style="width: 100%;" ${SyncManager.isSyncing ? 'disabled' : ''}>
                             <i class="fas fa-trash"></i> Limpiar Sincronizados
+                        </button>
+                        <button class="btn-warning btn-sm" onclick="window.SyncManager.clearPendingItems().then(() => window.SyncUI.loadTab('overview'));" style="width: 100%;" ${SyncManager.isSyncing ? 'disabled' : ''}>
+                            <i class="fas fa-trash-alt"></i> Limpiar Pendientes
                         </button>
                     </div>
                 </div>
@@ -275,9 +303,14 @@ const SyncUI = {
                     <h3 style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 0;">
                         <i class="fas fa-chart-line"></i> Actividad Reciente
                     </h3>
-                    <button class="btn-secondary btn-sm" onclick="window.SyncManager.clearSyncedItems(); window.SyncUI.loadTab('overview');" title="Limpiar sincronizados">
-                        <i class="fas fa-trash"></i> Limpiar Sincronizados
-                    </button>
+                    <div style="display: flex; gap: var(--spacing-xs);">
+                        <button class="btn-secondary btn-sm" onclick="window.SyncManager.clearSyncedItems().then(() => window.SyncUI.loadTab('overview'));" title="Limpiar sincronizados">
+                            <i class="fas fa-trash"></i> Sincronizados
+                        </button>
+                        <button class="btn-warning btn-sm" onclick="window.SyncManager.clearPendingItems().then(() => window.SyncUI.loadTab('overview'));" title="Limpiar pendientes">
+                            <i class="fas fa-trash-alt"></i> Pendientes
+                        </button>
+                    </div>
                 </div>
                 <div id="sync-activity-chart" style="height: 200px; max-height: 200px; overflow-y: auto; overflow-x: hidden; background: var(--color-bg-secondary); border-radius: var(--radius-sm); padding: var(--spacing-sm); width: 100%; box-sizing: border-box;">
                     ${await this.renderActivityChart()}
@@ -304,9 +337,19 @@ const SyncUI = {
                     Sincronizados (${synced.length})
                 </button>
                 <div style="margin-left: auto; display: flex; gap: var(--spacing-xs);">
+                    ${pending.length > 0 ? `
+                        <button class="btn-warning btn-sm" onclick="window.SyncManager.clearPendingItems().then(() => window.SyncUI.loadTab('queue'));" title="Eliminar todos los pendientes">
+                            <i class="fas fa-trash-alt"></i> Limpiar Pendientes (${pending.length})
+                        </button>
+                    ` : ''}
                     ${failed.length > 0 ? `
                         <button class="btn-danger btn-sm" onclick="window.SyncUI.clearFailedItems()" title="Eliminar todos los fallidos">
-                            <i class="fas fa-trash"></i> Limpiar Fallidos
+                            <i class="fas fa-trash"></i> Limpiar Fallidos (${failed.length})
+                        </button>
+                    ` : ''}
+                    ${synced.length > 0 ? `
+                        <button class="btn-secondary btn-sm" onclick="window.SyncManager.clearSyncedItems().then(() => window.SyncUI.loadTab('queue'));" title="Eliminar todos los sincronizados">
+                            <i class="fas fa-trash"></i> Limpiar Sincronizados (${synced.length})
                         </button>
                     ` : ''}
                     <button class="btn-secondary btn-sm" onclick="window.SyncUI.exportQueue()" title="Exportar cola">
