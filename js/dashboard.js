@@ -124,7 +124,10 @@ const Dashboard = {
             // Calcular KPIs
             const todayTotal = todaySales.reduce((sum, s) => sum + (s.total || 0), 0);
             const todayTickets = todaySales.length;
-            const avgTicket = todayPassengers > 0 ? todayTotal / todayPassengers : 0;
+            // Ticket promedio = Venta Total / Número de Pasajeros / Tipo de Cambio
+            const exchangeRateUsd = parseFloat((await DB.get('settings', 'exchange_rate_usd'))?.value || '20.00');
+            const avgTicket = todayPassengers > 0 ? todayTotal / todayPassengers / exchangeRateUsd : 0;
+            // % de Cierre = (Número de Ventas Totales / Número de Pasajeros) * 100
             const closeRate = todayPassengers > 0 ? (todayTickets / todayPassengers) * 100 : 0;
             
             // Obtener utilidad diaria usando ProfitCalculator (centralizado)
