@@ -741,16 +741,31 @@ const App = {
                             await Reports.init();
                         } else {
                             if (abortController.aborted) return;
-                            // Reports necesita reconfigurar UI si el contenido está vacío o dice "Cargando módulo"
+                            // Verificar si el contenido necesita ser reconfigurado
                             const content = document.getElementById('module-content');
-                            if (!content || content.innerHTML.includes('Cargando módulo') || content.innerHTML.trim() === '' || !content.querySelector('#reports-tabs')) {
+                            const reportsTabs = content?.querySelector('#reports-tabs');
+                            const reportsContent = content?.querySelector('#reports-content');
+                            
+                            // Si no hay tabs o contenido, o el contenido está vacío/blanco, reconfigurar
+                            if (!content || !reportsTabs || !reportsContent || 
+                                content.innerHTML.includes('Cargando módulo') || 
+                                content.innerHTML.trim() === '' ||
+                                reportsContent.innerHTML.trim() === '' ||
+                                reportsContent.innerHTML.includes('Cargando') ||
+                                reportsContent.innerHTML.includes('Cargando...')) {
                                 Reports.setupUI();
+                                if (abortController.aborted) return;
+                                await Utils.delay(100);
                                 if (abortController.aborted) return;
                                 await Reports.loadCatalogs();
                                 // Esperar un momento para que el DOM se actualice
                                 await Utils.delay(100);
+                                if (abortController.aborted) return;
+                                const activeTab = document.querySelector('#reports-tabs .tab-btn.active')?.dataset.tab || 'reports';
+                                await Reports.loadTab(activeTab);
                             } else {
                                 if (abortController.aborted) return;
+                                // Recargar la pestaña activa para asegurar que los datos estén actualizados
                                 const activeTab = document.querySelector('#reports-tabs .tab-btn.active')?.dataset.tab || 'reports';
                                 await Reports.loadTab(activeTab);
                             }
@@ -894,30 +909,29 @@ const App = {
                             await Cash.init();
                         } else {
                             if (abortController.aborted) return;
-                            // Asegurarse de que el módulo esté visible y el DOM esté listo
-                            const cashModule = document.getElementById('module-cash');
-                            const cashPlaceholder = document.getElementById('module-placeholder');
-                            const isModuleVisible = (cashModule && cashModule.style.display !== 'none') || 
-                                                    (cashPlaceholder && cashPlaceholder.style.display !== 'none');
+                            // Verificar si el contenido necesita ser reconfigurado
+                            const content = document.getElementById('module-content');
+                            const cashStatusCard = content?.querySelector('#cash-status-card');
+                            const cashStatusText = content?.querySelector('#cash-status-text');
                             
-                            if (isModuleVisible) {
-                                // Esperar a que el DOM esté listo
-                                let attempts = 0;
-                                const maxAttempts = 10;
-                                while (attempts < maxAttempts && !abortController.aborted) {
-                                    const cashContent = document.getElementById('module-content');
-                                    if (cashContent && cashContent.querySelector('#cash-status-text')) {
-                                        if (abortController.aborted) return;
-                                        await Cash.loadCurrentSession();
-                                        break;
-                                    }
-                                    await new Promise(resolve => setTimeout(resolve, 50));
-                                    attempts++;
-                                }
-                                if (attempts >= maxAttempts && !abortController.aborted) {
-                                    console.warn('No se pudo cargar la sesión de cash: elementos del DOM no están listos');
-                                }
+                            // Si no hay elementos clave o el contenido está vacío/blanco, reconfigurar
+                            if (!content || !cashStatusCard || !cashStatusText || 
+                                content.innerHTML.includes('Cargando módulo') || 
+                                content.innerHTML.trim() === '' ||
+                                content.innerHTML.includes('Cargando') ||
+                                !content.querySelector('.cash-container')) {
+                                Cash.setupUI();
+                                if (abortController.aborted) return;
+                                await Utils.delay(150);
+                                if (abortController.aborted) return;
+                                Cash.setupEventListeners();
                             }
+                            
+                            // Siempre recargar la sesión actual para asegurar datos actualizados
+                            if (abortController.aborted) return;
+                            // Esperar un momento adicional para asegurar que el DOM esté listo
+                            await Utils.delay(50);
+                            await Cash.loadCurrentSession();
                         }
                     }
                     break;
@@ -977,7 +991,10 @@ const App = {
             const yesterdayTotal = yesterdaySales.reduce((sum, s) => sum + s.total, 0);
             const tickets = todaySales.length;
             const passengers = todaySales.reduce((sum, s) => sum + (s.passengers || 1), 0);
-            const avgTicket = tickets > 0 ? totalSales / passengers : 0;
+            // Ticket promedio = Venta Total / Número de Pasajeros / Tipo de Cambio
+            const exchangeRateUsd = parseFloat((await DB.get('settings', 'exchange_rate_usd'))?.value || '20.00');
+            const avgTicket = passengers > 0 ? totalSales / passengers / exchangeRateUsd : 0;
+            // % de Cierre = (Número de Ventas Totales / Número de Pasajeros) * 100
             const closeRate = passengers > 0 ? (tickets / passengers) * 100 : 0;
             const salesChange = yesterdayTotal > 0 ? ((totalSales - yesterdayTotal) / yesterdayTotal * 100).toFixed(1) : 0;
 
@@ -1543,12 +1560,13 @@ const App = {
             }
 
             // TB: 1-6 → $300, 7-14 → $600, 15-18 → $800, 20-30 → $1,000, 30-45 → $1,200, +$20 por pasajero extra >45
+            // Nota: El extra solo aplica después de 45 pasajeros, no después de cada rango
             if (tbAgency) {
                 rules.push(
-                    { id: Utils.generateId(), agency_id: tbAgency.id, branch_id: null, min_passengers: 1, max_passengers: 6, unit_type: null, rate_per_passenger: 0, fee_type: 'flat', flat_fee: 300, extra_per_passenger: 20, active_from: today, active_until: null, notes: 'TB: 1-6 PAX + $20 extra >6', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), sync_status: 'pending' },
-                    { id: Utils.generateId(), agency_id: tbAgency.id, branch_id: null, min_passengers: 7, max_passengers: 14, unit_type: null, rate_per_passenger: 0, fee_type: 'flat', flat_fee: 600, extra_per_passenger: 20, active_from: today, active_until: null, notes: 'TB: 7-14 PAX + $20 extra >14', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), sync_status: 'pending' },
-                    { id: Utils.generateId(), agency_id: tbAgency.id, branch_id: null, min_passengers: 15, max_passengers: 18, unit_type: null, rate_per_passenger: 0, fee_type: 'flat', flat_fee: 800, extra_per_passenger: 20, active_from: today, active_until: null, notes: 'TB: 15-18 PAX + $20 extra >18', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), sync_status: 'pending' },
-                    { id: Utils.generateId(), agency_id: tbAgency.id, branch_id: null, min_passengers: 20, max_passengers: 30, unit_type: null, rate_per_passenger: 0, fee_type: 'flat', flat_fee: 1000, extra_per_passenger: 20, active_from: today, active_until: null, notes: 'TB: 20-30 PAX + $20 extra >30', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), sync_status: 'pending' },
+                    { id: Utils.generateId(), agency_id: tbAgency.id, branch_id: null, min_passengers: 1, max_passengers: 6, unit_type: null, rate_per_passenger: 0, fee_type: 'flat', flat_fee: 300, extra_per_passenger: 0, active_from: today, active_until: null, notes: 'TB: 1-6 PAX', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), sync_status: 'pending' },
+                    { id: Utils.generateId(), agency_id: tbAgency.id, branch_id: null, min_passengers: 7, max_passengers: 14, unit_type: null, rate_per_passenger: 0, fee_type: 'flat', flat_fee: 600, extra_per_passenger: 0, active_from: today, active_until: null, notes: 'TB: 7-14 PAX', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), sync_status: 'pending' },
+                    { id: Utils.generateId(), agency_id: tbAgency.id, branch_id: null, min_passengers: 15, max_passengers: 18, unit_type: null, rate_per_passenger: 0, fee_type: 'flat', flat_fee: 800, extra_per_passenger: 0, active_from: today, active_until: null, notes: 'TB: 15-18 PAX', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), sync_status: 'pending' },
+                    { id: Utils.generateId(), agency_id: tbAgency.id, branch_id: null, min_passengers: 20, max_passengers: 30, unit_type: null, rate_per_passenger: 0, fee_type: 'flat', flat_fee: 1000, extra_per_passenger: 0, active_from: today, active_until: null, notes: 'TB: 20-30 PAX', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), sync_status: 'pending' },
                     { id: Utils.generateId(), agency_id: tbAgency.id, branch_id: null, min_passengers: 30, max_passengers: 45, unit_type: null, rate_per_passenger: 0, fee_type: 'flat', flat_fee: 1200, extra_per_passenger: 20, active_from: today, active_until: null, notes: 'TB: 30-45 PAX + $20 extra >45', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), sync_status: 'pending' }
                 );
             }
