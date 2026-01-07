@@ -407,6 +407,26 @@ const UserManager = {
     },
 
     async checkAuth() {
+        // IMPORTANTE: Verificar primero si el código de empresa ya fue validado
+        // Si no está validado, NO mostrar login-screen (App.initCompanyCodeAccess se encarga de eso)
+        const companyCodeScreen = document.getElementById('company-code-screen');
+        const companyCodeValidated = localStorage.getItem('company_code_validated');
+        
+        // Si la pantalla de código de empresa está visible, no hacer nada aquí
+        if (companyCodeScreen && companyCodeScreen.style.display === 'flex') {
+            console.log('checkAuth: Código de empresa pendiente, esperando validación...');
+            return;
+        }
+        
+        // Si no hay código validado y no estamos en producción con bypass, esperar
+        if (!companyCodeValidated) {
+            // Verificar si existe App.COMPANY_ACCESS_CODE (sistema de código habilitado)
+            if (typeof App !== 'undefined' && App.COMPANY_ACCESS_CODE) {
+                console.log('checkAuth: Código de empresa no validado aún, delegando a initCompanyCodeAccess');
+                return;
+            }
+        }
+        
         try {
             const userId = localStorage.getItem('current_user_id');
             if (userId) {
@@ -436,9 +456,13 @@ const UserManager = {
                                 UI.updateAdminNavigation(isAdmin);
                             }
                             
+                            // Ocultar AMBAS pantallas de autenticación
                             const loginScreen = document.getElementById('login-screen');
                             if (loginScreen) {
                                 loginScreen.style.display = 'none';
+                            }
+                            if (companyCodeScreen) {
+                                companyCodeScreen.style.display = 'none';
                             }
                             
                             // Restaurar módulo guardado o mostrar dashboard
@@ -470,12 +494,14 @@ const UserManager = {
             console.error('Error in checkAuth:', e);
         }
         
-        // Show login - ensure it's visible
-        const loginScreen = document.getElementById('login-screen');
-        if (loginScreen) {
-            loginScreen.style.display = 'flex';
-        } else {
-            console.error('login-screen element not found!');
+        // Solo mostrar login si el código de empresa ya fue validado
+        if (companyCodeValidated) {
+            const loginScreen = document.getElementById('login-screen');
+            if (loginScreen) {
+                loginScreen.style.display = 'flex';
+            } else {
+                console.error('login-screen element not found!');
+            }
         }
     },
 
@@ -488,11 +514,31 @@ const UserManager = {
         localStorage.removeItem('current_employee_id');
         localStorage.removeItem('current_branch_id');
         
-        document.getElementById('login-screen').style.display = 'flex';
-        document.getElementById('employee-barcode-input').value = '';
-        document.getElementById('pin-input').value = '';
-        document.getElementById('pin-group').style.display = 'none';
-        document.getElementById('login-error').style.display = 'none';
+        // Al cerrar sesión, verificar si debe mostrar código de empresa o login
+        const companyCodeValidated = localStorage.getItem('company_code_validated');
+        const companyCodeScreen = document.getElementById('company-code-screen');
+        const loginScreen = document.getElementById('login-screen');
+        
+        if (companyCodeValidated) {
+            // Código de empresa ya validado, mostrar solo login
+            if (loginScreen) loginScreen.style.display = 'flex';
+            if (companyCodeScreen) companyCodeScreen.style.display = 'none';
+        } else {
+            // Código de empresa no validado, mostrar pantalla de código
+            if (companyCodeScreen) companyCodeScreen.style.display = 'flex';
+            if (loginScreen) loginScreen.style.display = 'none';
+        }
+        
+        // Limpiar campos de login
+        const barcodeInput = document.getElementById('employee-barcode-input');
+        const pinInput = document.getElementById('pin-input');
+        const pinGroup = document.getElementById('pin-group');
+        const loginError = document.getElementById('login-error');
+        
+        if (barcodeInput) barcodeInput.value = '';
+        if (pinInput) pinInput.value = '';
+        if (pinGroup) pinGroup.style.display = 'none';
+        if (loginError) loginError.style.display = 'none';
     },
 
     async logAudit(action, entityType, entityId, details = {}) {
