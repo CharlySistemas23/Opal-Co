@@ -2278,9 +2278,47 @@ const Reports = {
             const sellerCommissions = {};
             const guideCommissions = {};
 
-            sales.forEach(sale => {
-                const sellerComm = sale.seller_commission || 0;
-                const guideComm = sale.guide_commission || 0;
+            // Obtener todos los sale_items para calcular comisiones si no están en la venta
+            const allSaleItems = await DB.getAll('sale_items') || [];
+
+            for (const sale of sales) {
+                let sellerComm = sale.seller_commission || 0;
+                let guideComm = sale.guide_commission || 0;
+
+                // Si las comisiones no están en la venta o son 0, calcularlas desde los items
+                const needsCalculation = (!sale.seller_commission && sale.seller_id) || (!sale.guide_commission && sale.guide_id);
+                
+                if (needsCalculation) {
+                    const saleItems = allSaleItems.filter(si => si.sale_id === sale.id);
+                    
+                    // Calcular comisiones desde los items si no están guardadas
+                    if (!sale.seller_commission && sale.seller_id) {
+                        sellerComm = 0;
+                        for (const item of saleItems) {
+                            if (item.subtotal > 0) {
+                                const itemSellerComm = await Utils.calculateCommission(item.subtotal, sale.seller_id, null);
+                                sellerComm += itemSellerComm;
+                            }
+                        }
+                    }
+                    
+                    if (!sale.guide_commission && sale.guide_id) {
+                        guideComm = 0;
+                        for (const item of saleItems) {
+                            if (item.subtotal > 0) {
+                                const itemGuideComm = await Utils.calculateCommission(item.subtotal, null, sale.guide_id);
+                                guideComm += itemGuideComm;
+                            }
+                        }
+                    }
+
+                    // Actualizar la venta con las comisiones calculadas si no las tenía
+                    if ((sellerComm > 0 || guideComm > 0) && (!sale.seller_commission && !sale.guide_commission)) {
+                        sale.seller_commission = sellerComm;
+                        sale.guide_commission = guideComm;
+                        await DB.put('sales', sale);
+                    }
+                }
 
                 commissionsBreakdown.sellers += sellerComm;
                 commissionsBreakdown.guides += guideComm;
@@ -2300,7 +2338,7 @@ const Reports = {
                     guideCommissions[sale.guide_id].total += guideComm;
                     guideCommissions[sale.guide_id].count += 1;
                 }
-            });
+            }
 
             commissionsBreakdown.total = commissionsBreakdown.sellers + commissionsBreakdown.guides;
 
