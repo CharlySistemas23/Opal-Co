@@ -6,6 +6,8 @@
     <title>Opal & Co - Sistema POS</title>
     <link rel="stylesheet" href="css/styles.css?v=202512202023">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google API Client Library -->
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client"></script>
@@ -54,12 +56,12 @@
             <nav class="sidebar-nav">
                 <!-- Operaciones -->
                 <div class="nav-section">
-                    <div class="nav-section-header" data-section="operaciones">
+                    <div class="nav-section-header cursor-pointer" data-section="operaciones">
                         <span class="nav-section-icon"><i class="fas fa-chart-pie"></i></span>
                         <span class="nav-section-label">OPERACIONES</span>
-                        <span class="nav-section-chevron"><i class="fas fa-chevron-down"></i></span>
+                        <span class="nav-section-chevron transition-transform duration-300"><i class="fas fa-chevron-down"></i></span>
                     </div>
-                    <div class="nav-section-items" data-section-items="operaciones">
+                    <div class="nav-section-items overflow-hidden transition-all duration-300 ease-in-out max-h-96 opacity-100" data-section-items="operaciones">
                 <a href="#" class="nav-item active" data-module="dashboard">
                     <span class="nav-icon"><i class="fas fa-chart-pie"></i></span>
                     <span class="nav-label">Dashboard</span>
@@ -81,12 +83,12 @@
 
                 <!-- Inventario -->
                 <div class="nav-section">
-                    <div class="nav-section-header" data-section="inventario">
+                    <div class="nav-section-header cursor-pointer" data-section="inventario">
                         <span class="nav-section-icon"><i class="fas fa-box"></i></span>
                         <span class="nav-section-label">INVENTARIO</span>
-                        <span class="nav-section-chevron"><i class="fas fa-chevron-down"></i></span>
+                        <span class="nav-section-chevron transition-transform duration-300"><i class="fas fa-chevron-down"></i></span>
                     </div>
-                    <div class="nav-section-items" data-section-items="inventario">
+                    <div class="nav-section-items overflow-hidden transition-all duration-300 ease-in-out max-h-96 opacity-100" data-section-items="inventario">
                 <a href="#" class="nav-item" data-module="inventory">
                     <span class="nav-icon"><i class="fas fa-box"></i></span>
                     <span class="nav-label">Inventario</span>
@@ -100,12 +102,12 @@
 
                 <!-- Clientes y Servicios -->
                 <div class="nav-section">
-                    <div class="nav-section-header" data-section="clientes">
+                    <div class="nav-section-header cursor-pointer" data-section="clientes">
                         <span class="nav-section-icon"><i class="fas fa-users"></i></span>
                         <span class="nav-section-label">CLIENTES Y SERVICIOS</span>
-                        <span class="nav-section-chevron"><i class="fas fa-chevron-down"></i></span>
+                        <span class="nav-section-chevron transition-transform duration-300"><i class="fas fa-chevron-down"></i></span>
                     </div>
-                    <div class="nav-section-items" data-section-items="clientes">
+                    <div class="nav-section-items overflow-hidden transition-all duration-300 ease-in-out max-h-96 opacity-100" data-section-items="clientes">
                 <a href="#" class="nav-item" data-module="customers">
                     <span class="nav-icon"><i class="fas fa-users"></i></span>
                     <span class="nav-label">Clientes</span>
@@ -123,12 +125,12 @@
 
                 <!-- Administración -->
                 <div class="nav-section">
-                    <div class="nav-section-header" data-section="administracion">
+                    <div class="nav-section-header cursor-pointer" data-section="administracion">
                         <span class="nav-section-icon"><i class="fas fa-user-tie"></i></span>
                         <span class="nav-section-label">ADMINISTRACIÓN</span>
-                        <span class="nav-section-chevron"><i class="fas fa-chevron-down"></i></span>
+                        <span class="nav-section-chevron transition-transform duration-300"><i class="fas fa-chevron-down"></i></span>
                     </div>
-                    <div class="nav-section-items" data-section-items="administracion">
+                    <div class="nav-section-items overflow-hidden transition-all duration-300 ease-in-out max-h-96 opacity-100" data-section-items="administracion">
                 <a href="#" class="nav-item" data-module="employees">
                     <span class="nav-icon"><i class="fas fa-user-tie"></i></span>
                     <span class="nav-label">Empleados</span>
@@ -138,12 +140,12 @@
 
                 <!-- Análisis y Reportes -->
                 <div class="nav-section">
-                    <div class="nav-section-header" data-section="analisis">
+                    <div class="nav-section-header cursor-pointer" data-section="analisis">
                         <span class="nav-section-icon"><i class="fas fa-chart-bar"></i></span>
                         <span class="nav-section-label">ANÁLISIS Y REPORTES</span>
-                        <span class="nav-section-chevron"><i class="fas fa-chevron-down"></i></span>
+                        <span class="nav-section-chevron transition-transform duration-300"><i class="fas fa-chevron-down"></i></span>
                     </div>
-                    <div class="nav-section-items" data-section-items="analisis">
+                    <div class="nav-section-items overflow-hidden transition-all duration-300 ease-in-out max-h-96 opacity-100" data-section-items="analisis">
                 <a href="#" class="nav-item" data-module="reports">
                     <span class="nav-icon"><i class="fas fa-chart-bar"></i></span>
                     <span class="nav-label">Reportes</span>
@@ -157,12 +159,12 @@
 
                 <!-- Sistema -->
                 <div class="nav-section">
-                    <div class="nav-section-header" data-section="sistema">
+                    <div class="nav-section-header cursor-pointer" data-section="sistema">
                         <span class="nav-section-icon"><i class="fas fa-cog"></i></span>
                         <span class="nav-section-label">SISTEMA</span>
-                        <span class="nav-section-chevron"><i class="fas fa-chevron-down"></i></span>
+                        <span class="nav-section-chevron transition-transform duration-300"><i class="fas fa-chevron-down"></i></span>
                     </div>
-                    <div class="nav-section-items" data-section-items="sistema">
+                    <div class="nav-section-items overflow-hidden transition-all duration-300 ease-in-out max-h-96 opacity-100" data-section-items="sistema">
                 <a href="#" class="nav-item" data-module="sync">
                     <span class="nav-icon"><i class="fas fa-sync"></i></span>
                     <span class="nav-label">Sincronización</span>
@@ -183,8 +185,8 @@
         <!-- Content Area -->
         <main class="content-area" id="content-area">
             <!-- Login Screen -->
-            <!-- Pantalla de Código de Acceso de Empresa -->
-            <div id="company-code-screen" class="login-screen" style="display: none;">
+            <!-- Pantalla de Código de Acceso de Empresa (PRIMERA - se muestra primero si no está validado) -->
+            <div id="company-code-screen" class="login-screen" style="display: flex;">
                 <div class="login-backdrop"></div>
                 <div class="login-card">
                     <div class="login-logo">
@@ -213,7 +215,8 @@
                 </div>
             </div>
 
-            <div id="login-screen" class="login-screen">
+            <!-- Pantalla de Login de Usuario (SEGUNDA - se muestra después de validar código de empresa) -->
+            <div id="login-screen" class="login-screen" style="display: none;">
                 <div class="login-backdrop"></div>
                 <div class="login-card">
                     <div class="login-logo">
