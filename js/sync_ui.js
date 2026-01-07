@@ -8,8 +8,13 @@ const SyncUI = {
         try {
             const urlSetting = await DB.get('settings', 'sync_url');
             const tokenSetting = await DB.get('settings', 'sync_token');
+            const clientIdSetting = await DB.get('settings', 'google_client_id');
+            const spreadsheetIdSetting = await DB.get('settings', 'google_sheets_spreadsheet_id');
+            
             if (urlSetting) SyncManager.syncUrl = urlSetting.value;
             if (tokenSetting) SyncManager.syncToken = tokenSetting.value;
+            if (clientIdSetting) SyncManager.googleClientId = clientIdSetting.value;
+            if (spreadsheetIdSetting) SyncManager.spreadsheetId = spreadsheetIdSetting.value;
         } catch (e) {
             console.error('Error loading sync settings on init:', e);
         }
@@ -152,8 +157,14 @@ const SyncUI = {
             lastSync = null;
         }
 
-        // Verificar si está configurado - verificar nuevamente después de recargar
-        const isConfigured = SyncManager.syncUrl && SyncManager.syncToken && SyncManager.syncUrl.trim() !== '' && SyncManager.syncToken.trim() !== '';
+        // Verificar si está configurado - considerar ambas formas de configuración:
+        // 1. Google Apps Script (sync_url + sync_token)
+        // 2. Google Sheets API (google_client_id + spreadsheet_id)
+        const hasAppsScriptConfig = SyncManager.syncUrl && SyncManager.syncToken && 
+            SyncManager.syncUrl.trim() !== '' && SyncManager.syncToken.trim() !== '';
+        const hasSheetsApiConfig = SyncManager.googleClientId && SyncManager.spreadsheetId && 
+            SyncManager.googleClientId.trim() !== '' && SyncManager.spreadsheetId.trim() !== '';
+        const isConfigured = hasAppsScriptConfig || hasSheetsApiConfig;
         
         return `
             ${!isConfigured ? `
@@ -165,8 +176,12 @@ const SyncUI = {
                     </p>
                     <div style="margin-top: var(--spacing-sm); font-size: 11px; opacity: 0.9;">
                         <div><strong>Estado actual:</strong></div>
+                        <div style="margin-top: var(--spacing-xs);"><strong>Google Apps Script:</strong></div>
                         <div>• URL: ${SyncManager.syncUrl ? '✓ Configurada' : '✗ No configurada'}</div>
                         <div>• Token: ${SyncManager.syncToken ? '✓ Configurado' : '✗ No configurado'}</div>
+                        <div style="margin-top: var(--spacing-xs);"><strong>Google Sheets API:</strong></div>
+                        <div>• Client ID: ${SyncManager.googleClientId ? '✓ Configurado' : '✗ No configurado'}</div>
+                        <div>• Spreadsheet ID: ${SyncManager.spreadsheetId ? '✓ Configurado' : '✗ No configurado'}</div>
                     </div>
                 </div>
             ` : `
