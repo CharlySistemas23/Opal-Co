@@ -218,42 +218,99 @@ const App = {
                         await DB.put('catalog_branches', { id: 'branch1', name: 'Tienda 1', address: '', active: true });
                     }
 
-                    const emp1 = { id: 'emp1', name: 'Admin', role: 'admin', branch_id: 'branch1', active: true, barcode: 'EMP001' };
-                    const emp2 = { id: 'emp2', name: 'Vendedor 1', role: 'seller', branch_id: 'branch1', active: true, barcode: 'EMP002' };
+                    // Verificar si los empleados ya existen ANTES de crearlos
+                    const existingEmployees = await DB.getAll('employees') || [];
+                    const existingUsers = await DB.getAll('users') || [];
                     
-                    await DB.put('employees', emp1);
-                    await DB.put('employees', emp2);
-                    console.log('Employees created');
+                    // Solo crear empleado admin si NO existe
+                    let emp1 = existingEmployees.find(e => e.id === 'emp1');
+                    if (!emp1) {
+                        emp1 = { id: 'emp1', name: 'Admin', role: 'admin', branch_id: 'branch1', active: true, barcode: 'EMP001' };
+                        await DB.put('employees', emp1);
+                        console.log('Employee Admin created');
+                    } else {
+                        console.log('Employee Admin already exists, skipping creation');
+                        // Actualizar solo si falta información crítica
+                        if (!emp1.branch_id || !emp1.active) {
+                            emp1.branch_id = emp1.branch_id || 'branch1';
+                            emp1.active = emp1.active !== false;
+                            await DB.put('employees', emp1);
+                        }
+                    }
+                    
+                    // Solo crear empleado vendedor si NO existe
+                    let emp2 = existingEmployees.find(e => e.id === 'emp2');
+                    if (!emp2) {
+                        emp2 = { id: 'emp2', name: 'Vendedor 1', role: 'seller', branch_id: 'branch1', active: true, barcode: 'EMP002' };
+                        await DB.put('employees', emp2);
+                        console.log('Employee Vendedor created');
+                    } else {
+                        console.log('Employee Vendedor already exists, skipping creation');
+                        // Actualizar solo si falta información crítica
+                        if (!emp2.branch_id || !emp2.active) {
+                            emp2.branch_id = emp2.branch_id || 'branch1';
+                            emp2.active = emp2.active !== false;
+                            await DB.put('employees', emp2);
+                        }
+                    }
                     
                     const pinHash = await Utils.hashPin('1234');
                     console.log('PIN hash generated:', pinHash.substring(0, 20) + '...');
                     
-                    const user1 = {
-                        id: 'user1',
-                        username: 'admin',
-                        employee_id: 'emp1',
-                        role: 'admin',
-                        permissions: ['all'],
-                        active: true,
-                        pin_hash: pinHash
-                    };
-                    const user2 = {
-                        id: 'user2',
-                        username: 'vendedor1',
-                        employee_id: 'emp2',
-                        role: 'seller',
-                        permissions: ['pos', 'inventory_view'],
-                        active: true,
-                        pin_hash: pinHash
-                    };
+                    // Solo crear usuario admin si NO existe
+                    let user1 = existingUsers.find(u => u.id === 'user1' || (u.username === 'admin' && u.employee_id === 'emp1'));
+                    if (!user1) {
+                        user1 = {
+                            id: 'user1',
+                            username: 'admin',
+                            employee_id: 'emp1',
+                            role: 'admin',
+                            permissions: ['all'],
+                            active: true,
+                            pin_hash: pinHash
+                        };
+                        await DB.put('users', user1);
+                        console.log('User admin created');
+                    } else {
+                        console.log('User admin already exists, skipping creation');
+                        // Actualizar solo si falta información crítica
+                        if (!user1.employee_id || !user1.active) {
+                            user1.employee_id = user1.employee_id || 'emp1';
+                            user1.active = user1.active !== false;
+                            await DB.put('users', user1);
+                        }
+                    }
                     
-                    await DB.put('users', user1);
-                    await DB.put('users', user2);
+                    // Solo crear usuario vendedor si NO existe
+                    let user2 = existingUsers.find(u => u.id === 'user2' || (u.username === 'vendedor1' && u.employee_id === 'emp2'));
+                    if (!user2) {
+                        user2 = {
+                            id: 'user2',
+                            username: 'vendedor1',
+                            employee_id: 'emp2',
+                            role: 'seller',
+                            permissions: ['pos', 'inventory_view'],
+                            active: true,
+                            pin_hash: pinHash
+                        };
+                        await DB.put('users', user2);
+                        console.log('User vendedor created');
+                    } else {
+                        console.log('User vendedor already exists, skipping creation');
+                        // Actualizar solo si falta información crítica
+                        if (!user2.employee_id || !user2.active) {
+                            user2.employee_id = user2.employee_id || 'emp2';
+                            user2.active = user2.active !== false;
+                            await DB.put('users', user2);
+                        }
+                    }
+                    
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:73',message:'createDemoUsers EXITOSO',data:{usersCreated:2,employeesCreated:2},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                    fetch('http://127.0.0.1:7242/ingest/d085ffd8-d37f-46dc-af23-0f9fbbe46595',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:73',message:'createDemoUsers EXITOSO',data:{usersCreated:2,employeesCreated:2,existingEmployeesCount:existingEmployees.length,existingUsersCount:existingUsers.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
                     // #endregion
-                    console.log('Users created successfully!');
-                    console.log('Try login with: admin / 1234');
+                    console.log('Users check completed successfully!');
+                    console.log(`Total employees: ${(await DB.getAll('employees') || []).length}`);
+                    console.log(`Total users: ${(await DB.getAll('users') || []).length}`);
                     return true;
                 } catch (error) {
                     // #region agent log
