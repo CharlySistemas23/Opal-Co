@@ -1294,8 +1294,10 @@ const Utils = {
                 if (sellerRule) {
                     const discountPct = sellerRule.discount_pct || 0;
                     const multiplier = sellerRule.multiplier || 1;
-                    // Comisión = (subtotal * discount_pct / 100) * multiplier
-                    const commission = (subtotal * discountPct / 100) * multiplier;
+                    // Aplicar descuento primero, luego calcular comisión sobre el monto después del descuento
+                    // Fórmula: -X% *Y% = (subtotal * (1 - X/100)) * Y/100
+                    const afterDiscount = subtotal * (1 - (discountPct / 100));
+                    const commission = afterDiscount * (multiplier / 100);
                     totalCommission += commission;
                 }
             }
@@ -1317,8 +1319,10 @@ const Utils = {
                 if (guideRule) {
                     const discountPct = guideRule.discount_pct || 0;
                     const multiplier = guideRule.multiplier || 1;
-                    // Comisión = (subtotal * discount_pct / 100) * multiplier
-                    const commission = (subtotal * discountPct / 100) * multiplier;
+                    // Aplicar descuento primero, luego calcular comisión sobre el monto después del descuento
+                    // Fórmula: -X% *Y% = (subtotal * (1 - X/100)) * Y/100
+                    const afterDiscount = subtotal * (1 - (discountPct / 100));
+                    const commission = afterDiscount * (multiplier / 100);
                     totalCommission += commission;
                 }
             }
