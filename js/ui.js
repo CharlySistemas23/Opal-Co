@@ -49,6 +49,8 @@ const UI = {
                     
                     try {
                         this.showModule(module);
+                        // Esperar un momento para que el DOM se actualice
+                        await Utils.delay(50);
                         // Cargar el módulo después de mostrarlo
                         if (window.App && window.App.loadModule) {
                             this.moduleLoadPromise = window.App.loadModule(module);
@@ -70,11 +72,90 @@ const UI = {
             });
         });
 
-        // Deshabilitar funcionalidad de colapsar - todos los módulos siempre visibles
-        // No configurar event listeners para colapsar/expandir
+        // Configurar secciones colapsables con Tailwind CSS
+        const sidebarNav = document.querySelector('.sidebar-nav');
+        if (sidebarNav) {
+            sidebarNav.addEventListener('click', (e) => {
+                const header = e.target.closest('.nav-section-header');
+                const navItem = e.target.closest('.nav-item');
+                
+                if (header && !navItem) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const section = header.dataset.section;
+                    if (!section) {
+                        console.log('No section found');
+                        return;
+                    }
+                    
+                    const items = header.nextElementSibling;
+                    if (!items || !items.classList.contains('nav-section-items')) {
+                        console.log('Items not found');
+                        return;
+                    }
+                    
+                    // Toggle con clases de Tailwind aplicadas dinámicamente
+                    const wasCollapsed = header.classList.contains('collapsed');
+                    
+                    if (!wasCollapsed) {
+                        // Va a colapsar
+                        header.classList.add('collapsed');
+                        // Remover clases de expandido y agregar de colapsado
+                        items.classList.remove('max-h-96', 'opacity-100');
+                        items.classList.add('max-h-0', 'opacity-0', 'pointer-events-none');
+                    } else {
+                        // Va a expandir
+                        header.classList.remove('collapsed');
+                        // Remover clases de colapsado y agregar de expandido
+                        items.classList.remove('max-h-0', 'opacity-0', 'pointer-events-none');
+                        items.classList.add('max-h-96', 'opacity-100');
+                    }
+                    
+                    const isCollapsed = !wasCollapsed;
+                    
+                    // Guardar estado
+                    this.saveSectionState(section, isCollapsed);
+                }
+            });
+        } else {
+            console.error('sidebarNav not found!');
+        }
         
-        // Cargar estado guardado de secciones colapsables DESPUÉS de crear wrappers y configurar eventos
-        // Usar setTimeout para asegurar que el DOM esté completamente renderizado
+        // También agregar listeners directos como backup
+        setTimeout(() => {
+            document.querySelectorAll('.nav-section-header').forEach(header => {
+                header.addEventListener('click', (e) => {
+                    const navItem = e.target.closest('.nav-item');
+                    if (navItem) return;
+                    
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const section = header.dataset.section;
+                    if (!section) return;
+                    
+                    const items = header.nextElementSibling;
+                    if (!items || !items.classList.contains('nav-section-items')) {
+                        return;
+                    }
+                    
+                    const wasCollapsed = header.classList.contains('collapsed');
+                    
+                    if (!wasCollapsed) {
+                        header.classList.add('collapsed');
+                        items.classList.remove('max-h-96', 'opacity-100');
+                        items.classList.add('max-h-0', 'opacity-0', 'pointer-events-none');
+                    } else {
+                        header.classList.remove('collapsed');
+                        items.classList.remove('max-h-0', 'opacity-0', 'pointer-events-none');
+                        items.classList.add('max-h-96', 'opacity-100');
+                    }
+                    
+                    this.saveSectionState(section, !wasCollapsed);
+                });
+            });
+        }, 200);
+        
+        // Cargar estado guardado de secciones colapsables
         setTimeout(() => {
             this.loadSectionStates();
         }, 100);
@@ -131,7 +212,7 @@ const UI = {
                 }
             }
 
-            // Asegurar que TODOS los módulos estén siempre desplegados
+            // Aplicar estados según localStorage o módulo activo
             headers.forEach((header) => {
                 const section = header.dataset.section;
                 if (!section) return;
@@ -141,16 +222,20 @@ const UI = {
                     return;
                 }
                 
-                // SIEMPRE remover collapsed y asegurar visibilidad
-                header.classList.remove('collapsed');
+                // Si hay un estado guardado, usarlo; si no, expandir la sección activa
+                const isCollapsed = states.hasOwnProperty(section) 
+                    ? states[section] 
+                    : (section !== sectionToExpand);
                 
-                // Asegurar que estén visibles con !important
-                items.style.display = 'block';
-                items.style.opacity = '1';
-                items.style.height = '';
-                items.style.maxHeight = '';
-                items.style.transform = '';
-                items.style.transition = '';
+                if (isCollapsed) {
+                    header.classList.add('collapsed');
+                    items.classList.remove('max-h-96', 'opacity-100');
+                    items.classList.add('max-h-0', 'opacity-0', 'pointer-events-none');
+                } else {
+                    header.classList.remove('collapsed');
+                    items.classList.remove('max-h-0', 'opacity-0', 'pointer-events-none');
+                    items.classList.add('max-h-96', 'opacity-100');
+                }
             });
 
         } catch (e) {
@@ -329,8 +414,18 @@ const UI = {
             if (placeholder && title && content) {
                 placeholder.style.display = 'block';
                 title.textContent = this.getModuleTitle(moduleName);
-                // Limpiar contenido anterior para forzar recarga
-                content.innerHTML = '';
+                // Verificar si el contenido necesita ser limpiado
+                // Solo limpiar si está vacío, tiene "Cargando módulo", o no tiene los elementos del módulo actual
+                const hasModuleContent = content.querySelector(
+                    `#${moduleName}-content, #${moduleName}-tabs, #cash-status-card, #cash-container, #reports-tabs, #reports-content, #commissions-results`
+                );
+                
+                if (content.innerHTML.trim() === '' || 
+                    content.innerHTML.includes('Cargando módulo') ||
+                    !hasModuleContent) {
+                    // Solo limpiar si realmente no tiene contenido del módulo
+                    content.innerHTML = '';
+                }
                 this.currentModule = moduleName;
                 
                 // Guardar módulo actual en localStorage
