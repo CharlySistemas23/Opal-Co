@@ -2381,12 +2381,45 @@ const SyncManager = {
             return;
         }
 
-        const synced = await DB.query('sync_queue', 'status', 'synced');
-        for (const item of synced) {
-            await DB.delete('sync_queue', item.id);
+        try {
+            const synced = await DB.query('sync_queue', 'status', 'synced') || [];
+            let deletedCount = 0;
+            
+            for (const item of synced) {
+                await DB.delete('sync_queue', item.id);
+                deletedCount++;
+            }
+
+            Utils.showNotification(`${deletedCount} elementos sincronizados eliminados`, 'success');
+            return deletedCount;
+        } catch (e) {
+            console.error('Error eliminando elementos sincronizados:', e);
+            Utils.showNotification('Error al eliminar elementos sincronizados', 'error');
+            throw e;
+        }
+    },
+
+    async clearPendingItems() {
+        if (!await Utils.confirm('¿Eliminar todos los elementos pendientes de la cola? Esto cancelará la sincronización de estos elementos.')) {
+            return;
         }
 
-        Utils.showNotification(`${synced.length} elementos eliminados`, 'success');
+        try {
+            const pending = await DB.query('sync_queue', 'status', 'pending') || [];
+            let deletedCount = 0;
+            
+            for (const item of pending) {
+                await DB.delete('sync_queue', item.id);
+                deletedCount++;
+            }
+
+            Utils.showNotification(`${deletedCount} elementos pendientes eliminados`, 'success');
+            return deletedCount;
+        } catch (e) {
+            console.error('Error eliminando elementos pendientes:', e);
+            Utils.showNotification('Error al eliminar elementos pendientes', 'error');
+            throw e;
+        }
     },
 
     async sync() {
