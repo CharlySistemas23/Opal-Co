@@ -1526,6 +1526,11 @@ Object.assign(POS, {
             await Costs.registerCOGS(sale.id, totalCOGS, branchId, sale.folio);
         }
 
+        // Actualizar venta con comisiones totales
+        sale.seller_commission = totalSellerCommission;
+        sale.guide_commission = totalGuideCommission;
+        await DB.put('sales', sale);
+
         // Registrar comisiones automáticamente
         if (typeof Costs !== 'undefined') {
             if (totalSellerCommission > 0 && sellerId) {
