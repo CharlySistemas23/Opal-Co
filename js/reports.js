@@ -1102,6 +1102,18 @@ const Reports = {
         const avgTicket = totalPassengers > 0 ? totalSales / totalPassengers : 0;
         const closeRate = totalPassengers > 0 ? (sales.length / totalPassengers) * 100 : 0;
 
+        // Calcular comisiones desde las ventas
+        const commissionsBreakdown = {
+            sellers: 0,
+            guides: 0,
+            total: 0
+        };
+        sales.forEach(sale => {
+            commissionsBreakdown.sellers += sale.seller_commission || 0;
+            commissionsBreakdown.guides += sale.guide_commission || 0;
+        });
+        commissionsBreakdown.total = commissionsBreakdown.sellers + commissionsBreakdown.guides;
+
         // Obtener costos del período del reporte
         let totalCosts = 0;
         let costBreakdown = {
@@ -1251,6 +1263,43 @@ const Reports = {
                 </div>
             ` : ''}
             
+            ${commissionsBreakdown.total > 0 ? `
+                <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light); margin-top: var(--spacing-lg);">
+                    <h3 style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--spacing-sm);">
+                        <i class="fas fa-percent"></i> Desglose de Comisiones
+                    </h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-md);">
+                        <div style="padding: var(--spacing-md); background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%); border-radius: var(--radius-md); color: white;">
+                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                <i class="fas fa-user-tag"></i> Comisiones Vendedores
+                            </div>
+                            <div style="font-weight: 700; font-size: 24px; margin-bottom: 4px;">${Utils.formatCurrency(commissionsBreakdown.sellers)}</div>
+                            <div style="font-size: 11px; opacity: 0.8;">
+                                ${commissionsBreakdown.total > 0 ? ((commissionsBreakdown.sellers / commissionsBreakdown.total) * 100).toFixed(1) : 0}% del total
+                            </div>
+                        </div>
+                        <div style="padding: var(--spacing-md); background: linear-gradient(135deg, var(--color-success) 0%, #4CAF50 100%); border-radius: var(--radius-md); color: white;">
+                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                <i class="fas fa-suitcase"></i> Comisiones Guías
+                            </div>
+                            <div style="font-weight: 700; font-size: 24px; margin-bottom: 4px;">${Utils.formatCurrency(commissionsBreakdown.guides)}</div>
+                            <div style="font-size: 11px; opacity: 0.8;">
+                                ${commissionsBreakdown.total > 0 ? ((commissionsBreakdown.guides / commissionsBreakdown.total) * 100).toFixed(1) : 0}% del total
+                            </div>
+                        </div>
+                        <div style="padding: var(--spacing-md); background: var(--color-bg-secondary); border: 2px solid var(--color-border); border-radius: var(--radius-md);">
+                            <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                <i class="fas fa-calculator"></i> Total Comisiones
+                            </div>
+                            <div style="font-weight: 700; font-size: 24px; color: var(--color-text); margin-bottom: 4px;">${Utils.formatCurrency(commissionsBreakdown.total)}</div>
+                            <div style="font-size: 11px; color: var(--color-text-secondary);">
+                                ${sales.length} venta${sales.length !== 1 ? 's' : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
+            
             ${dailyData.length > 0 ? `
                 <div class="module" style="padding: var(--spacing-md); background: var(--color-bg-card); border-radius: var(--radius-md); border: 1px solid var(--color-border-light); margin-top: var(--spacing-lg);">
                     <h3 style="font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--spacing-sm);">
@@ -1298,6 +1347,8 @@ const Reports = {
                                 <th>Guía</th>
                                 <th>Pasajeros</th>
                                 <th>Total</th>
+                                <th>Com. Vendedor</th>
+                                <th>Com. Guía</th>
                                 <th>Estado</th>
                             </tr>
                         </thead>
@@ -1317,6 +1368,8 @@ const Reports = {
                                         <td>${guide?.name || 'N/A'}</td>
                                         <td>${sale.passengers || 1}</td>
                                         <td style="font-weight: 600;">${Utils.formatCurrency(sale.total)}</td>
+                                        <td style="color: var(--color-primary); font-weight: 500;">${Utils.formatCurrency(sale.seller_commission || 0)}</td>
+                                        <td style="color: var(--color-success); font-weight: 500;">${Utils.formatCurrency(sale.guide_commission || 0)}</td>
                                         <td><span class="status-badge status-${sale.status === 'completada' ? 'disponible' : sale.status === 'apartada' ? 'reservado' : 'cancelado'}">${sale.status}</span></td>
                                     </tr>
                                 `;
