@@ -2011,6 +2011,226 @@ Object.assign(POS, {
         UI.showModal('Ventas Pendientes', body, '<button class="btn-secondary" onclick="UI.closeModal()">Cerrar</button>');
     },
 
+    async showDrafts() {
+        try {
+            // Obtener sucursal actual para filtrar
+            const currentBranchId = typeof BranchManager !== 'undefined' 
+                ? BranchManager.getCurrentBranchId() 
+                : localStorage.getItem('current_branch_id') || null;
+            
+            // Obtener todas las ventas con status 'borrador'
+            const allSales = await DB.getAll('sales') || [];
+            const drafts = allSales.filter(sale => {
+                if (sale.status !== 'borrador') return false;
+                // Filtrar por sucursal si está configurada
+                if (currentBranchId && sale.branch_id && sale.branch_id !== currentBranchId) return false;
+                return true;
+            }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            if (drafts.length === 0) {
+                Utils.showNotification('No hay borradores guardados', 'info');
+                return;
+            }
+
+            // Obtener información adicional
+            const branches = await DB.getAll('catalog_branches') || [];
+            const sellers = await DB.getAll('catalog_sellers') || [];
+            const guides = await DB.getAll('catalog_guides') || [];
+            const agencies = await DB.getAll('catalog_agencies') || [];
+
+            const body = `
+                <div style="max-height: 500px; overflow-y: auto;">
+                    ${drafts.map(sale => {
+                        const branch = branches.find(b => b.id === sale.branch_id);
+                        const seller = sellers.find(s => s.id === sale.seller_id);
+                        const guide = guides.find(g => g.id === sale.guide_id);
+                        const agency = agencies.find(a => a.id === sale.agency_id);
+                        
+                        let cartItems = [];
+                        try {
+                            cartItems = sale.cart_data ? JSON.parse(sale.cart_data) : [];
+                        } catch (e) {
+                            cartItems = [];
+                        }
+
+                        return `
+                            <div style="padding: 16px; background: var(--color-bg-secondary); border-radius: 8px; margin-bottom: 12px; border: 1px solid var(--color-border-light);">
+                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                                    <div>
+                                        <strong style="color: var(--color-primary);">${sale.folio || 'Sin folio'}</strong>
+                                        <div style="font-size: 11px; color: var(--color-text-secondary); margin-top: 4px;">
+                                            ${Utils.formatDate(sale.created_at, 'DD/MM/YYYY HH:mm')}
+                                        </div>
+                                        ${branch ? `<div style="font-size: 11px; color: var(--color-text-secondary);">${branch.name}</div>` : ''}
+                                    </div>
+                                    <strong style="color: var(--color-primary); font-size: 18px;">
+                                        ${Utils.formatCurrency(sale.total || 0)}
+                                    </strong>
+                                </div>
+                                <div style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px;">
+                                    <div><strong>Productos:</strong> ${cartItems.length} item${cartItems.length !== 1 ? 's' : ''}</div>
+                                    ${seller ? `<div><strong>Vendedor:</strong> ${seller.name}</div>` : ''}
+                                    ${guide ? `<div><strong>Guía:</strong> ${guide.name}</div>` : ''}
+                                    ${agency ? `<div><strong>Agencia:</strong> ${agency.name}</div>` : ''}
+                                </div>
+                                ${cartItems.length > 0 ? `
+                                    <div style="font-size: 11px; color: var(--color-text-secondary); margin-bottom: 12px; max-height: 60px; overflow-y: auto;">
+                                        ${cartItems.slice(0, 3).map(item => `${item.name || item.sku} (${item.quantity}x)`).join(', ')}
+                                        ${cartItems.length > 3 ? `... y ${cartItems.length - 3} más` : ''}
+                                    </div>
+                                ` : ''}
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="btn-primary btn-sm" onclick="window.POS.loadDraft('${sale.id}')">
+                                        <i class="fas fa-edit"></i> Cargar
+                                    </button>
+                                    <button class="btn-secondary btn-sm" onclick="window.POS.completeDraft('${sale.id}')">
+                                        <i class="fas fa-check"></i> Completar
+                                    </button>
+                                    <button class="btn-danger btn-sm" onclick="window.POS.deleteDraft('${sale.id}')">
+                                        <i class="fas fa-trash"></i> Eliminar
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+
+            UI.showModal('Borradores Guardados', body, '<button class="btn-secondary" onclick="UI.closeModal()">Cerrar</button>');
+        } catch (e) {
+            console.error('Error mostrando borradores:', e);
+            Utils.showNotification('Error al cargar borradores', 'error');
+        }
+    },
+
+    async loadDraft(saleId) {
+        try {
+            const sale = await DB.get('sales', saleId);
+            if (!sale || sale.status !== 'borrador') {
+                Utils.showNotification('Borrador no encontrado', 'error');
+                return;
+            }
+
+            // Cargar el carrito desde cart_data
+            let cartItems = [];
+            try {
+                cartItems = sale.cart_data ? JSON.parse(sale.cart_data) : [];
+            } catch (e) {
+                Utils.showNotification('Error al cargar datos del borrador', 'error');
+                return;
+            }
+
+            // Limpiar carrito actual
+            this.cart = [];
+
+            // Cargar items al carrito
+            for (const item of cartItems) {
+                const inventoryItem = await DB.get('inventory_items', item.id);
+                if (inventoryItem) {
+                    this.cart.push({
+                        id: item.id,
+                        name: inventoryItem.name,
+                        sku: inventoryItem.sku,
+                        price: item.price || inventoryItem.price,
+                        quantity: item.quantity || 1,
+                        discount: item.discount || 0,
+                        subtotal: item.subtotal || (item.price * (item.quantity || 1))
+                    });
+                }
+            }
+
+            // Cargar información adicional
+            if (sale.seller_id) {
+                const seller = await DB.get('catalog_sellers', sale.seller_id);
+                if (seller) {
+                    this.currentSeller = seller;
+                    this.updateSellerDisplay();
+                }
+            }
+
+            if (sale.guide_id) {
+                const guide = await DB.get('catalog_guides', sale.guide_id);
+                if (guide) {
+                    this.currentGuide = guide;
+                    this.updateGuideDisplay();
+                }
+            }
+
+            if (sale.agency_id) {
+                const agency = await DB.get('catalog_agencies', sale.agency_id);
+                if (agency) {
+                    this.currentAgency = agency;
+                    this.updateAgencyDisplay();
+                }
+            }
+
+            if (sale.customer_id) {
+                const customer = await DB.get('customers', sale.customer_id);
+                if (customer) {
+                    this.currentCustomer = customer;
+                    this.updateCustomerDisplay();
+                }
+            }
+
+            // Actualizar UI
+            this.updateCart();
+            this.updateTotals();
+
+            // Eliminar el borrador después de cargarlo
+            await this.deleteDraft(saleId);
+
+            Utils.showNotification('Borrador cargado correctamente', 'success');
+            UI.closeModal();
+        } catch (e) {
+            console.error('Error cargando borrador:', e);
+            Utils.showNotification('Error al cargar el borrador', 'error');
+        }
+    },
+
+    async completeDraft(saleId) {
+        try {
+            const sale = await DB.get('sales', saleId);
+            if (!sale || sale.status !== 'borrador') {
+                Utils.showNotification('Borrador no encontrado', 'error');
+                return;
+            }
+
+            // Cargar el borrador primero
+            await this.loadDraft(saleId);
+            
+            // Completar la venta
+            await this.completeSale();
+        } catch (e) {
+            console.error('Error completando borrador:', e);
+            Utils.showNotification('Error al completar el borrador', 'error');
+        }
+    },
+
+    async deleteDraft(saleId) {
+        if (!await Utils.confirm('¿Eliminar este borrador?')) return;
+
+        try {
+            await DB.delete('sales', saleId);
+            
+            // También eliminar los sale_items asociados si existen
+            const saleItems = await DB.query('sale_items', 'sale_id', saleId) || [];
+            for (const item of saleItems) {
+                await DB.delete('sale_items', item.id);
+            }
+
+            Utils.showNotification('Borrador eliminado', 'success');
+            
+            // Recargar la lista si el modal está abierto
+            const modal = document.getElementById('modal-container');
+            if (modal && modal.style.display !== 'none') {
+                await this.showDrafts();
+            }
+        } catch (e) {
+            console.error('Error eliminando borrador:', e);
+            Utils.showNotification('Error al eliminar el borrador', 'error');
+        }
+    },
+
     // ==================== FAVORITOS ====================
 
     async loadFavorites() {
