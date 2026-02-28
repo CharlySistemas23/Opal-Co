@@ -24,9 +24,15 @@ export default function SignInPage() {
         <Container className="max-w-xl">
           <SignInForm />
           <p className="mt-8 font-sans text-sm text-charcoal/70 text-center">
-            Don&apos;t have an account?{" "}
+            ¿No tienes cuenta?{" "}
             <Link href="/register" className="uppercase tracking-[0.15em] text-charcoal hover:text-champagne transition-colors duration-fast underline underline-offset-2">
-              Register
+              Regístrate
+            </Link>
+          </p>
+          <p className="mt-4 font-sans text-sm text-charcoal/60 text-center">
+            ¿Prefieres acceder con código por email?{" "}
+            <Link href="/account/login" className="uppercase tracking-[0.15em] text-charcoal/80 hover:text-champagne transition-colors duration-fast underline underline-offset-2">
+              Enviar código
             </Link>
           </p>
         </Container>
