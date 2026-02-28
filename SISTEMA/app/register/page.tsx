@@ -24,9 +24,9 @@ export default function RegisterPage() {
         <Container className="max-w-xl">
           <RegisterForm />
           <p className="mt-8 font-sans text-sm text-charcoal/70 text-center">
-            Already have an account?{" "}
+            ¿Ya tienes cuenta?{" "}
             <Link href="/sign-in" className="uppercase tracking-[0.15em] text-charcoal hover:text-champagne transition-colors duration-fast underline underline-offset-2">
-              Sign in
+              Iniciar sesión
             </Link>
           </p>
         </Container>
