@@ -16,11 +16,11 @@ export function RegisterForm() {
     e.preventDefault();
     setError(null);
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError("Las contraseñas no coinciden.");
       return;
     }
     if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+      setError("La contraseña debe tener al menos 8 caracteres.");
       return;
     }
     try {
@@ -36,10 +36,17 @@ export function RegisterForm() {
         setPassword("");
         setConfirmPassword("");
       } else {
-        setError("Something went wrong. Please try again.");
+        const data = await res.json();
+        setError(
+          data.error === "EMAIL_TAKEN"
+            ? "Este email ya está registrado."
+            : data.error === "PASSWORD_TOO_SHORT"
+              ? "La contraseña debe tener al menos 8 caracteres."
+              : "Algo salió mal. Intenta de nuevo."
+        );
       }
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Algo salió mal. Intenta de nuevo.");
     }
   };
 
@@ -47,13 +54,13 @@ export function RegisterForm() {
     return (
       <div className="text-center py-12">
         <Text variant="body" className="text-charcoal">
-          Thank you. Your account has been created. You may now sign in.
+          Tu cuenta ha sido creada. Ya puedes iniciar sesión.
         </Text>
         <Link
           href="/sign-in"
           className="inline-block mt-6 font-sans text-xs uppercase tracking-[0.2em] text-charcoal hover:text-champagne transition-colors duration-fast"
         >
-          Sign in
+          Iniciar sesión
         </Link>
       </div>
     );
