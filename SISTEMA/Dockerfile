@@ -26,7 +26,8 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./
-COPY --from=builder /app/lib/generated ./lib/generated
+COPY --from=builder /app/lib ./lib
+COPY --from=builder /app/utils ./utils
 COPY --from=builder /app/scripts ./scripts
 
 EXPOSE 8080
