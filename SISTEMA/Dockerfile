@@ -33,5 +33,5 @@ EXPOSE 8080
 ENV PORT=8080
 ENV HOSTNAME="0.0.0.0"
 
-# Migraciones + verificación + inicio de Next.js
-CMD ["sh", "-c", "npx prisma migrate deploy && node scripts/verify-db.mjs && npm run start"]
+# Migraciones + seed (crea admin si ADMIN_OWNER_EMAIL está definido) + verificación + Next.js
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run db:seed || true && node scripts/verify-db.mjs && npm run start"]
