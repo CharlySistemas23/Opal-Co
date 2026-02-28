@@ -52,11 +52,23 @@ When set, “Proceed to Payment” redirects to Stripe Checkout. When not set, t
 - `DATABASE_URL` – PostgreSQL connection string
 
 ```bash
-npx prisma migrate dev   # Run migrations
-npx prisma db seed       # Seed initial data (if configured)
+npm run db:migrate   # Aplicar migraciones (producción)
+npm run db:seed      # Datos iniciales (requiere ADMIN_OWNER_EMAIL)
+npm run db:verify    # Verificar que tablas existan
 ```
 
+En deploy (Railway/Docker): las migraciones y el seed se ejecutan automáticamente al iniciar.
+
 Without `DATABASE_URL`, the public site works with mock/placeholder data; the admin shows “Database not configured” and login uses mock mode (`owner@local.dev`).
+
+### Admin (primer usuario)
+
+- `ADMIN_OWNER_EMAIL` – Si está definido, el seed crea un usuario OWNER con este email en cada deploy.
+- `ADMIN_SESSION_SECRET` – (recomendado en producción) secreto para firmar cookies de sesión.
+- `ADMIN_OTP_PEPPER` – (recomendado en producción) pepper para hashear códigos OTP.
+- `ADMIN_EMAIL_FROM` / `ADMIN_EMAIL_FROM_NAME` – Remitente para correos OTP del admin.
+
+Para crear un admin manualmente: `ADMIN_EMAIL=tu@email.com npm run db:create-admin`
 
 ### Cloudinary (media uploads)
 
@@ -91,6 +103,42 @@ When neither is configured: newsletter subscription returns “email service not
 - `NEXT_PUBLIC_SITE_URL` – canonical base URL (default: `https://opal-and-co.com`)
 
 Used for metadata, sitemap, and Stripe success/cancel URLs.
+
+## Deploy en Railway
+
+1. **Variables requeridas** (servicio Opal-Co):
+   - `DATABASE_URL` – Referenciar desde el servicio Postgres.
+   - `ADMIN_OWNER_EMAIL` – Email del primer admin (se crea automáticamente con el seed).
+   - `ADMIN_SESSION_SECRET` – Valor aleatorio (ej. `openssl rand -hex 32`).
+
+2. **Variables recomendadas**:
+   - `RESEND_API_KEY` o `POSTMARK_SERVER_TOKEN` – Para recibir OTP por email. Sin esto, el código OTP se imprime en los logs de deploy.
+   - `CLOUDINARY_*` – Para subir imágenes desde el admin.
+   - `STRIPE_SECRET_KEY` – Para checkout.
+
+3. **Dominio**: En Settings → Domains, genera un dominio para acceder al sitio.
+
+4. **Admin manual** (si no usas seed): En Railway, ejecuta un comando único:
+   ```bash
+   ADMIN_EMAIL=tu@email.com npm run db:create-admin
+   ```
+   (usa la `DATABASE_URL` del entorno)
+
+## Deploy en Vercel
+
+1. **Conectar repo**: Importa el proyecto desde GitHub en [vercel.com](https://vercel.com).
+
+2. **Variables de entorno** (Settings → Environment Variables):
+   - `DATABASE_URL` – URL de PostgreSQL (Neon, Supabase, Railway Postgres, etc.). Vercel puede usar la misma DB que Railway.
+   - `ADMIN_OWNER_EMAIL` – Email del admin (para seed).
+   - `ADMIN_SESSION_SECRET` – Secreto para sesiones admin.
+   - `CUSTOMER_SESSION_SECRET` – Secreto para sesiones de clientes.
+   - `NEXT_PUBLIC_SITE_URL` – URL de tu sitio en Vercel (ej. `https://tu-proyecto.vercel.app`).
+   - Opcionales: `RESEND_API_KEY`, `CLOUDINARY_*`, `STRIPE_SECRET_KEY`.
+
+3. **Build**: El proyecto usa `vercel-build` que ejecuta migraciones + build. No hace falta configurar nada extra.
+
+4. **Base de datos**: Si usas la misma Postgres de Railway, pega la `DATABASE_URL` en Vercel. Las migraciones se aplicarán en cada deploy.
 
 ## Feature overview
 
