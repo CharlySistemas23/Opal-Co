@@ -103,11 +103,19 @@ export function AccountDrawer() {
                     With an account, you can shop faster, view your order history, and access your bag or saved products from any device.
                   </Text>
                   <Link
-                    href="/account/login"
+                    href="/sign-in"
                     onClick={closeAccount}
                     className="flex items-center justify-between font-sans text-sm uppercase tracking-[0.15em] text-charcoal hover:text-champagne transition-colors duration-fast py-4 border-b border-charcoal/10 group"
                   >
-                    Sign in
+                    Iniciar sesión
+                    <span className="group-hover:translate-x-1 transition-transform" aria-hidden>›</span>
+                  </Link>
+                  <Link
+                    href="/register"
+                    onClick={closeAccount}
+                    className="flex items-center justify-between font-sans text-sm uppercase tracking-[0.15em] text-charcoal hover:text-champagne transition-colors duration-fast py-4 border-b border-charcoal/10 group"
+                  >
+                    Crear cuenta
                     <span className="group-hover:translate-x-1 transition-transform" aria-hidden>›</span>
                   </Link>
                 </>
