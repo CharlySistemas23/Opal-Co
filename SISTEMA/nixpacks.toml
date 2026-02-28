@@ -1,0 +1,3 @@
+# Railway / Nixpacks: ejecutar migraciones antes de iniciar
+[deploy]
+startCommand = "npx prisma migrate deploy && node scripts/verify-db.mjs && npm run start"
