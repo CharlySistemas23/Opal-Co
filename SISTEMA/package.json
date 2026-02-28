@@ -11,6 +11,7 @@
     "start:prod": "prisma migrate deploy && next start",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "db:create-admin": "tsx scripts/create-admin.ts",
     "db:verify": "node scripts/verify-db.mjs",
     "lint": "next lint",
     "test": "vitest run",
