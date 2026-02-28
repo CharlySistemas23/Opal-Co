@@ -1,10 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async redirects() {
-    return [
-      { source: "/sign-in", destination: "/account/login", permanent: false },
-      { source: "/register", destination: "/account/login", permanent: false },
-    ];
+    return [];
   },
   webpack: (config, { dev }) => {
     if (dev) {
