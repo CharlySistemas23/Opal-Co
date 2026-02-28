@@ -1,56 +1,53 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button, Text } from "@/components/ui";
 
+const ERROR_MESSAGES: Record<string, string> = {
+  INVALID_CREDENTIALS: "Email o contraseña incorrectos.",
+  INVALID_EMAIL: "Introduce un email válido.",
+  PASSWORD_NOT_SET:
+    "Esta cuenta usa acceso por código. Ve a Iniciar sesión y solicita un código.",
+  UNAVAILABLE: "El servicio no está disponible. Intenta más tarde.",
+};
+
 export function SignInForm() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setLoading(true);
     try {
       const res = await fetch("/api/sign-in", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
+        credentials: "include",
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setSubmitted(true);
-          setEmail("");
-          setPassword("");
-        } else {
-          setError(data.error || "Invalid email or password.");
-        }
-      } else {
-        setError("Something went wrong. Please try again.");
+      const data = await res.json();
+      if (res.ok && data.success) {
+        router.push("/account");
+        router.refresh();
+        return;
       }
+      setError(
+        ERROR_MESSAGES[data.error] ||
+          data.error ||
+          "Email o contraseña incorrectos."
+      );
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Algo salió mal. Intenta de nuevo.");
+    } finally {
+      setLoading(false);
     }
   };
-
-  if (submitted) {
-    return (
-      <div className="text-center py-12">
-        <Text variant="body" className="text-charcoal">
-          You have signed in successfully. Welcome back.
-        </Text>
-        <Link
-          href="/"
-          className="inline-block mt-6 font-sans text-xs uppercase tracking-[0.2em] text-charcoal hover:text-champagne transition-colors duration-fast"
-        >
-          Continue to homepage
-        </Link>
-      </div>
-    );
-  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
@@ -91,8 +88,8 @@ export function SignInForm() {
           placeholder="Your password"
         />
       </div>
-      <Button type="submit" variant="subtle">
-        Sign in
+      <Button type="submit" variant="subtle" disabled={loading}>
+        {loading ? "Iniciando sesión..." : "Iniciar sesión"}
       </Button>
     </form>
   );
