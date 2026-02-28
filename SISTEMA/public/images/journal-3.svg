@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
+  <defs>
+    <linearGradient id="j3" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#E8E6E2"/><stop offset="100%" stop-color="#E2DED6"/></linearGradient>
+    <radialGradient id="j32" cx="50%" cy="30%" r="60%"><stop offset="0%" stop-color="#C2A86B" stop-opacity="0.08"/><stop offset="100%" stop-color="transparent"/></radialGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#j3)"/>
+  <rect width="800" height="1000" fill="url(#j32)"/>
+  <text x="400" y="520" font-family="Georgia,serif" font-size="22" fill="#1C1C1C" fill-opacity="0.6" text-anchor="middle">In the Atelier</text>
+</svg>
