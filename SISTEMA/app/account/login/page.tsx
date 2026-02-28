@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Container, Heading, Text } from "@/components/ui";
@@ -35,6 +36,16 @@ export default async function AccountLoginPage() {
       <div className="py-16">
         <Container className="max-w-xl">
           <OtpLoginForm />
+          <p className="mt-8 font-sans text-sm text-charcoal/70 text-center">
+            ¿Prefieres usar email y contraseña?{" "}
+            <Link href="/sign-in" className="uppercase tracking-[0.15em] text-charcoal hover:text-champagne transition-colors duration-fast underline underline-offset-2">
+              Iniciar sesión
+            </Link>
+            {" · "}
+            <Link href="/register" className="uppercase tracking-[0.15em] text-charcoal hover:text-champagne transition-colors duration-fast underline underline-offset-2">
+              Crear cuenta
+            </Link>
+          </p>
         </Container>
       </div>
     </section>
