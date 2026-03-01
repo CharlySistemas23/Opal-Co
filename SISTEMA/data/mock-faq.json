@@ -1,5 +1,0 @@
-[
-  { "id": "1", "slug": "shipping", "question": "Do you ship internationally?", "answer": "Yes. We ship worldwide. Delivery times and costs depend on destination. You will receive tracking once your order ships." },
-  { "id": "2", "slug": "returns", "question": "What is your return policy?", "answer": "We offer returns within 30 days of delivery for unworn pieces in original condition. Please contact us to initiate a return." },
-  { "id": "3", "slug": "care", "question": "How should I care for my piece?", "answer": "Store in a soft pouch. Avoid contact with chemicals, perfumes, and water. We provide care instructions with each purchase." }
-]
