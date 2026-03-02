@@ -18,21 +18,49 @@ function LogoutButton() {
   );
 }
 
-const nav = [
-  { href: "/admin", label: "Dashboard" },
-  { href: "/admin/pages", label: "Pages" },
-  { href: "/admin/stores", label: "Stores" },
-  { href: "/admin/journal", label: "Journal" },
-  { href: "/admin/legal", label: "Legal" },
-  { href: "/admin/site-settings", label: "Site Text" },
-  { href: "/admin/filters", label: "Filters" },
-  { href: "/admin/forms", label: "Forms" },
-  { href: "/admin/products", label: "Products" },
-  { href: "/admin/collections", label: "Collections" },
-  { href: "/admin/media", label: "Media" },
-  { href: "/admin/inventory", label: "Inventory" },
-  { href: "/admin/subscribers", label: "Subscribers" },
-  { href: "/admin/users", label: "Users" },
+const navGroups: { title: string; items: { href: string; label: string }[] }[] = [
+  {
+    title: "General",
+    items: [{ href: "/admin", label: "Dashboard" }],
+  },
+  {
+    title: "Contenido",
+    items: [
+      { href: "/admin/pages", label: "Pages" },
+      { href: "/admin/journal", label: "Journal" },
+      { href: "/admin/legal", label: "Legal" },
+    ],
+  },
+  {
+    title: "Textos y formularios",
+    items: [
+      { href: "/admin/site-settings", label: "Site Text" },
+      { href: "/admin/forms", label: "Forms" },
+    ],
+  },
+  {
+    title: "Tienda",
+    items: [
+      { href: "/admin/products", label: "Products" },
+      { href: "/admin/collections", label: "Collections" },
+      { href: "/admin/filters", label: "Filters" },
+      { href: "/admin/inventory", label: "Inventory" },
+    ],
+  },
+  {
+    title: "Locales y medios",
+    items: [
+      { href: "/admin/stores", label: "Stores" },
+      { href: "/admin/media", label: "Media" },
+    ],
+  },
+  {
+    title: "Usuarios y newsletter",
+    items: [
+      { href: "/admin/subscribers", label: "Subscribers" },
+      { href: "/admin/users", label: "Users" },
+    ],
+  },
 ];
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
@@ -52,19 +80,28 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             Admin
           </Heading>
         </div>
-        <nav className="p-4 flex flex-col gap-2">
-          {nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`font-sans text-sm uppercase tracking-[0.15em] px-4 py-2 rounded transition-colors ${
-                pathname === item.href
-                  ? "bg-charcoal/10 text-charcoal"
-                  : "text-charcoal/70 hover:text-charcoal hover:bg-charcoal/5"
-              }`}
-            >
-              {item.label}
-            </Link>
+        <nav className="p-4 flex flex-col gap-4 overflow-y-auto">
+          {navGroups.map((group) => (
+            <div key={group.title}>
+              <p className="font-sans text-[10px] uppercase tracking-widest text-charcoal/50 px-4 py-1.5">
+                {group.title}
+              </p>
+              <div className="flex flex-col gap-0.5">
+                {group.items.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`font-sans text-sm uppercase tracking-[0.15em] px-4 py-2 rounded transition-colors ${
+                      pathname === item.href
+                        ? "bg-charcoal/10 text-charcoal"
+                        : "text-charcoal/70 hover:text-charcoal hover:bg-charcoal/5"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
         <div className="mt-auto p-4 border-t border-charcoal/10">
