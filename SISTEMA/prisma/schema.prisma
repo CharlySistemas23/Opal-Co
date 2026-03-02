@@ -1,0 +1,481 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// === A) AUTH + ROLES ===
+
+enum StaffRole {
+  OWNER
+  ADMIN
+  MANAGER
+  STAFF
+  VIEWER
+}
+
+enum StaffStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model StaffUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      StaffRole
+  status    StaffStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  otpTokens StaffOtpToken[]
+  sessions  StaffSession[]
+  auditLogs StaffAuditLog[] @relation("ActorAuditLogs")
+}
+
+model StaffOtpToken {
+  id        String   @id @default(cuid())
+  userId    String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  user StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StaffSession {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StaffAuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String
+  action       String
+  entityType   String
+  entityId     String?
+  metaJson     Json?
+  createdAt    DateTime @default(now())
+
+  actor StaffUser @relation("ActorAuditLogs", fields: [actorUserId], references: [id])
+}
+
+// === B) CUSTOMER AUTH ===
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Customer {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  name         String?
+  phone        String?
+  passwordHash String?
+  status       CustomerStatus @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  sessions   CustomerSession[]
+  carts      Cart[]
+  orders     Order[]
+}
+
+model CustomerSession {
+  id         String   @id @default(cuid())
+  customerId String
+  tokenHash  String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+// === C) CMS / PAGES / BLOCKS ===
+
+model Page {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  title         String
+  seoTitle      String?
+  seoDescription String?
+  published     Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+
+  blocks PageBlock[]
+}
+
+enum PageBlockType {
+  HERO
+  MANIFESTO
+  FEATURED_PRODUCTS
+  DUAL_NARRATIVE
+  HIGH_JEWELRY
+  CRAFT
+  CTA
+  RICH_TEXT
+  GALLERY
+  FAQ_LIST
+}
+
+model PageBlock {
+  id        String        @id @default(cuid())
+  pageId    String
+  type      PageBlockType
+  order     Int           @default(0)
+  visible   Boolean       @default(true)
+  dataJson  Json?
+  updatedAt DateTime      @updatedAt
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+}
+
+// === D) STORES ===
+
+model Store {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  address     String
+  city        String
+  country     String
+  mapUrl      String?
+  description String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// === E) SITE SETTINGS ===
+
+model SiteSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model LegalPage {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  content   String   // HTML or markdown
+  updatedAt DateTime @updatedAt
+}
+
+// === F) MEDIA ===
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+model MediaAsset {
+  id        String    @id @default(cuid())
+  publicId  String    @unique
+  url       String
+  type      MediaType
+  format    String?
+  bytes     Int?
+  width     Int?
+  height    Int?
+  duration  Int?
+  folder    String?
+  tags      String[]
+  alt       String?
+  createdAt DateTime  @default(now())
+
+  productImages ProductImage[]
+  variantImages VariantImage[]
+}
+
+// === G) CATALOG ===
+
+model Collection {
+  id                 String             @id @default(cuid())
+  slug               String             @unique
+  title              String
+  description        String?
+  published          Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  productCollections ProductCollection[]
+}
+
+model ProductCollection {
+  productId    String
+  collectionId String
+  order        Int @default(0)
+
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, collectionId])
+}
+
+model Product {
+  id               String   @id @default(cuid())
+  handle           String   @unique
+  title            String
+  description      String?
+  productType      String?
+  materialSummary  String?
+  gemstoneSummary  String?
+  careText         String?
+  detailsText      String?
+  sectionsJson     Json?
+  byInquiry        Boolean  @default(false)
+  published        Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  images             ProductImage[]
+  variants           Variant[]
+  productCollections ProductCollection[]
+}
+
+model ProductImage {
+  id            String     @id @default(cuid())
+  productId     String
+  mediaAssetId  String
+  order         Int        @default(0)
+
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+}
+
+model Variant {
+  id              String   @id @default(cuid())
+  productId       String
+  sku             String   @unique
+  title           String
+  priceCents      Int
+  currency        String   @default("USD")
+  attributesJson  Json?
+  weightGrams     Int?
+  active          Boolean  @default(true)
+
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantImages  VariantImage[]
+  stockLevels    StockLevel[]
+  stockMovements StockMovement[]
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+}
+
+model VariantImage {
+  id            String     @id @default(cuid())
+  variantId     String
+  mediaAssetId  String
+  order         Int        @default(0)
+
+  variant    Variant    @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+}
+
+// === H) INVENTORY ===
+
+model Branch {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  addressJson Json?
+  createdAt   DateTime @default(now())
+
+  stockLevels   StockLevel[]
+  stockMovements StockMovement[]
+}
+
+model StockLevel {
+  id        String   @id @default(cuid())
+  branchId  String
+  variantId String
+  quantity  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, variantId])
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUST
+  TRANSFER
+}
+
+model StockMovement {
+  id                String            @id @default(cuid())
+  branchId          String
+  variantId         String
+  type              StockMovementType
+  quantity          Int
+  note              String?
+  referenceType     String?
+  referenceId       String?
+  actorStaffUserId  String?
+  createdAt         DateTime          @default(now())
+
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+}
+
+// === I) CART + ORDERS + PAYMENTS ===
+
+enum CartStatus {
+  ACTIVE
+  ORDERED
+  ABANDONED
+}
+
+model Cart {
+  id         String     @id @default(cuid())
+  customerId String?
+  status     CartStatus @default(ACTIVE)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  customer Customer?   @relation(fields: [customerId], references: [id])
+  items    CartItem[]
+  orders   Order[]
+}
+
+model CartItem {
+  id                String   @id @default(cuid())
+  cartId            String
+  variantId         String
+  quantity          Int
+  snapshotTitle     String
+  snapshotPriceCents Int
+  createdAt         DateTime @default(now())
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PREPARING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+model Order {
+  id                  String      @id @default(cuid())
+  orderNumber         String      @unique
+  cartId              String?
+  customerId          String?
+  email               String
+  status              OrderStatus @default(PENDING_PAYMENT)
+  currency            String      @default("USD")
+  subtotalCents       Int
+  shippingCents       Int         @default(0)
+  taxCents            Int         @default(0)
+  totalCents          Int
+  shippingAddressJson Json?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  cart     Cart?       @relation(fields: [cartId], references: [id])
+  customer Customer?   @relation(fields: [customerId], references: [id])
+  items    OrderItem[]
+  payments Payment[]
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  variantId   String
+  sku         String
+  title       String
+  priceCents  Int
+  quantity    Int
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+}
+
+enum PaymentProvider {
+  STRIPE
+}
+
+enum PaymentStatus {
+  REQUIRES_PAYMENT
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id                       String          @id @default(cuid())
+  orderId                  String
+  provider                 PaymentProvider
+  status                   PaymentStatus   @default(REQUIRES_PAYMENT)
+  stripePaymentIntentId    String?
+  stripeCheckoutSessionId  String?
+  createdAt                DateTime        @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// === J) SUBSCRIBERS / EMAIL ===
+
+enum SubscriberStatus {
+  PENDING
+  SUBSCRIBED
+  UNSUBSCRIBED
+  BOUNCED
+}
+
+model Subscriber {
+  id               String           @id @default(cuid())
+  email            String           @unique
+  status           SubscriberStatus @default(PENDING)
+  source           String?
+  tags             String[]
+  verifyTokenHash  String?
+  verifyExpiresAt  DateTime?
+  consentAt       DateTime?
+  confirmedAt     DateTime?
+  createdAt        DateTime         @default(now())
+
+  emailEvents EmailEvent[]
+}
+
+enum EmailEventType {
+  DELIVERED
+  OPENED
+  CLICKED
+  BOUNCED
+  UNSUBSCRIBED
+}
+
+model EmailEvent {
+  id                 String        @id @default(cuid())
+  subscriberId       String?
+  type               EmailEventType
+  providerMessageId  String?
+  metaJson           Json?
+  createdAt          DateTime      @default(now())
+
+  subscriber Subscriber? @relation(fields: [subscriberId], references: [id], onDelete: SetNull)
+}
