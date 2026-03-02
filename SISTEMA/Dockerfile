@@ -1,6 +1,10 @@
 # ===== Build stage =====
 FROM node:20-alpine AS builder
 
+# Railway y otros proveedores pasan DATABASE_URL para migraciones en build
+ARG DATABASE_URL
+ENV DATABASE_URL=${DATABASE_URL}
+
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
