@@ -15,6 +15,7 @@ const REQUIRED_TABLES = [
   "Variant",
   "Cart",
   "Order",
+  "SiteSetting",
 ];
 
 async function main() {
