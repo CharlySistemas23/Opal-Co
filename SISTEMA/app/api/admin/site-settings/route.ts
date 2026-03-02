@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import { apiError, apiSuccess } from "@/lib/apiResponse";
 import { requireAdminCatalog } from "@/lib/admin-api-auth";
 import { getSiteTextMap, updateSiteText } from "@/lib/data/siteText";
@@ -31,7 +32,11 @@ export async function PUT(request: Request) {
     await updateSiteText(items);
     return apiSuccess({ ok: true });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error("[site-settings PUT]", err);
-    return apiError("SAVE_FAILED", 500);
+    return NextResponse.json(
+      { error: "SAVE_FAILED", message: msg },
+      { status: 500 }
+    );
   }
 }
