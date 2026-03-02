@@ -24,6 +24,7 @@ export default function AdminFiltersPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/admin/site-settings", { credentials: "include" })
@@ -66,6 +67,7 @@ export default function AdminFiltersPage() {
   const handleSave = async () => {
     setSaving(true);
     setSaved(false);
+    setError(null);
     try {
       const items = [
         { key: "filter_options", value: JSON.stringify(options.filter((o) => o.value.trim() || o.label.trim())) },
@@ -77,7 +79,12 @@ export default function AdminFiltersPage() {
         credentials: "include",
         body: JSON.stringify({ items }),
       });
-      if (res.ok) setSaved(true);
+      if (res.ok) {
+        setSaved(true);
+        return;
+      }
+      const body = await res.json().catch(() => ({}));
+      setError(body?.message ?? body?.error ?? `Error ${res.status}`);
     } finally {
       setSaving(false);
     }
@@ -102,6 +109,7 @@ export default function AdminFiltersPage() {
           </Heading>
           <div className="flex items-center gap-4">
             {saved && <Text variant="small" className="text-green-600">Saved</Text>}
+            {error && <Text variant="small" className="text-red-600">Error: {error}</Text>}
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : "Save"}
             </Button>
