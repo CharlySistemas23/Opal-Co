@@ -12,21 +12,26 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const auth = await requireAdminCatalog(request);
-  if (auth instanceof Response) return auth;
-
-  if (!databaseConfigured()) return apiError("UNAVAILABLE", 503);
-
-  let body: { items?: Array<{ key: string; value: string }> };
   try {
-    body = await request.json();
-  } catch {
-    return apiError("INVALID_BODY", 400);
+    const auth = await requireAdminCatalog(request);
+    if (auth instanceof Response) return auth;
+
+    if (!databaseConfigured()) return apiError("UNAVAILABLE", 503);
+
+    let body: { items?: Array<{ key: string; value: string }> };
+    try {
+      body = await request.json();
+    } catch {
+      return apiError("INVALID_BODY", 400);
+    }
+
+    const items = body.items ?? [];
+    if (items.length === 0) return apiSuccess({ ok: true });
+
+    await updateSiteText(items);
+    return apiSuccess({ ok: true });
+  } catch (err) {
+    console.error("[site-settings PUT]", err);
+    return apiError("SAVE_FAILED", 500);
   }
-
-  const items = body.items ?? [];
-  if (items.length === 0) return apiSuccess({ ok: true });
-
-  await updateSiteText(items);
-  return apiSuccess({ ok: true });
 }
