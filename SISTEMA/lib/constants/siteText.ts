@@ -1,0 +1,71 @@
+export const DEFAULT_SITE_TEXT: Record<string, string> = {
+  cart_title: "Your Bag",
+  cart_close: "Close",
+  cart_empty_message: "Your bag is empty.",
+  cart_continue_shopping: "Continue shopping",
+  cart_view_bag: "View bag",
+  cart_checkout: "Proceed to Checkout",
+  footer_copyright: "All rights reserved.",
+  footer_legal_title: "Legal",
+  header_brand_text: "OPAL & CO",
+
+  hero_fallback_headline: "OWN YOUR RADIANCE",
+  hero_fallback_image_url: "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=1920&q=80",
+
+  newsletter_title: "Stay Connected",
+  newsletter_body: "Receive early access to new collections, stories from the atelier, and invitations to private events.",
+  newsletter_placeholder: "Your email",
+  newsletter_button: "Subscribe",
+  newsletter_thank_you: "Thank you. Please check your email to confirm.",
+
+  high_jewelry_hero_title: "High Jewelry",
+  high_jewelry_hero_image_url: "https://images.unsplash.com/photo-1558858728-f4921d58d3d5?w=1920&q=80",
+
+  journal_hero_title: "Journal",
+  journal_hero_subtitle: "Stories on craft, material, and the art of jewelry.",
+
+  contact_fallback_title: "Contact",
+  contact_fallback_body: "For inquiries, appointments, and assistance. We respond within twenty-four hours.",
+  contact_fallback_email: "inquiries@opal-and-co.com",
+  contact_fallback_appointment: "By appointment only",
+
+  collections_page_title: "Collections",
+  collections_page_subtitle: "Explore our curated collections. Each piece reflects our commitment to craft and material.",
+
+  collection_filter_layout: "horizontal",
+  filter_options: '[{"value":"rings","label":"Rings"},{"value":"necklaces","label":"Necklaces"},{"value":"earrings","label":"Earrings"},{"value":"bracelets","label":"Bracelets"}]',
+
+  form_contact_label_name: "Name",
+  form_contact_label_email: "Email",
+  form_contact_label_message: "Message",
+  form_contact_placeholder_name: "Your name",
+  form_contact_placeholder_email: "your@email.com",
+  form_contact_placeholder_message: "Your message",
+  form_contact_submit: "Send",
+  form_contact_thank_you: "Thank you. We have received your message and will respond within twenty-four hours.",
+  form_contact_redirect_url: "",
+
+  account_drawer_title: "Account",
+  account_drawer_close: "Close",
+  account_drawer_loading: "Loading...",
+  account_drawer_welcome_prefix: "Welcome, ",
+  account_drawer_logged_in_desc: "Manage your account and view your orders.",
+  account_drawer_link_account: "Account",
+  account_drawer_link_orders: "Order history",
+  account_drawer_sign_in_prompt: "Sign in or create an account",
+  account_drawer_sign_in_desc: "With an account, you can shop faster, view your order history, and access your bag or saved products from any device.",
+  account_drawer_link_sign_in: "Iniciar sesión",
+  account_drawer_link_register: "Crear cuenta",
+
+  cart_unavailable_message: "Shopping bag is unavailable. Please contact us to complete your purchase.",
+  cart_contact_us: "Contact us",
+  cart_remove: "Remove",
+  cart_subtotal: "Subtotal",
+
+  search_placeholder: "Search pieces",
+  search_empty: "Search pieces",
+  search_searching: "Searching…",
+  search_no_results_prefix: "No results for",
+  search_clear: "Clear search",
+  search_by_inquiry: "By inquiry",
+};
