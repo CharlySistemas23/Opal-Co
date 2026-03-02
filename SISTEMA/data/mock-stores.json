@@ -1,0 +1,22 @@
+[
+  {
+    "id": "1",
+    "slug": "new-york",
+    "name": "New York",
+    "address": "By appointment only",
+    "city": "New York",
+    "country": "United States",
+    "mapUrl": null,
+    "description": "Private viewing by appointment. Contact us to schedule."
+  },
+  {
+    "id": "2",
+    "slug": "london",
+    "name": "London",
+    "address": "By appointment only",
+    "city": "London",
+    "country": "United Kingdom",
+    "mapUrl": null,
+    "description": "Private viewing by appointment. Contact us to schedule."
+  }
+]
