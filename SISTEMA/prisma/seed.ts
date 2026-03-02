@@ -487,8 +487,8 @@ async function main() {
   });
   await prisma.collection.upsert({
     where: { slug: "signature" },
-    create: { slug: "signature", title: "Signature", description: "Our signature collection.", published: true },
-    update: {},
+    create: { slug: "signature", title: "Signature Collection", description: "Our signature collection.", published: true },
+    update: { title: "Signature Collection" },
   });
 
   await prisma.productCollection.upsert({
